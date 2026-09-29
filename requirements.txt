@@ -1,0 +1,4 @@
+uiautomator2>=3.7,<4
+psycopg[binary]>=3.2,<4
+PyYAML>=6.0
+python-dotenv>=1.0

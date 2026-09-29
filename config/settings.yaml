@@ -1,0 +1,27 @@
+# ตั้งค่าบอท — ห้ามใส่รหัสผ่านหรือ connection string ในไฟล์นี้ (ใส่ใน .env)
+
+business:
+  factory_name: ""              # ชื่อโรงงาน — ต้องใส่ก่อนใช้ข้อความ Q1, B1, B2
+  persona_name: ""              # ชื่อที่ใช้ในบัญชี LINE (ไม่ใช่ชื่อจริงพนักงาน) — ใช้ในข้อความ Q1
+  source_text: "Google Maps"    # ที่มาของรายชื่อร้าน (ใช้ในข้อความ B4)
+
+outreach:
+  opener: Q2                    # ข้อความแรก: Q1 หรือ Q2 (ดู config/messages.yaml)
+  daily_quota: 15               # ทักร้านใหม่ได้กี่ร้านต่อวันต่อเครื่อง
+  outreach_hours: ["14:00", "16:30"]    # ช่วงเวลาทักร้านใหม่
+  reply_hours: ["08:00", "20:00"]       # ช่วงเวลาที่บอทตอบกลับ
+  delay_between_shops_sec: [60, 180]    # เว้นระยะแบบสุ่มระหว่างร้าน
+  auto_pitch: false             # ตอบอัตโนมัติ 1 ครั้งหลังร้านตอบ — เปิดหลังแก้ข้อเสนอใน messages.yaml ให้ตรงของจริง
+  no_reply_days: 7              # ร้านไม่ตอบกี่วันถือว่าจบ
+  max_consecutive_not_found: 5  # ค้นไม่เจอติดกันกี่ครั้งให้พักเครื่อง
+  not_found_pause_minutes: 60
+
+import:
+  shop_status: ["none"]         # นำเข้าเฉพาะร้านที่ "Shop"."status" เป็นค่าเหล่านี้ ([] = ทุกค่า)
+  skip_visited: true            # ข้ามร้านที่เซลส์ไปเยี่ยมแล้ว ("Shop"."visited" = true)
+  food_types: []                # [] = ทุกประเภท หรือใส่ เช่น ["ก๋วยเตี๋ยว"] ("Shop"."foodType")
+  max_age_days: null            # เฉพาะร้านที่เปิดมาไม่เกินกี่วัน ("Shop"."calculatedAgeDays"), null = ไม่กรอง
+
+device:
+  line_package: jp.naver.line.android
+  friend_label_max_len: 20      # ความยาวสูงสุดของชื่อเพื่อนที่บอทตั้ง (ตรวจจริงใน Phase 0)

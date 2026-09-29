@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# secrets
+.env
+
+# screen dumps and logs can contain names and messages shown on the phone
+dumps/
+logs/

@@ -1,0 +1,68 @@
+# selector ของหน้าจอแอป LINE (jp.naver.line.android) ที่บอทใช้กดปุ่ม
+#
+# ⚠️ ค่าตอนนี้เป็นการเดาจากข้อความบนหน้าจอ ต้องตรวจและแก้หลังรัน `python -m bot dump` บนแต่ละหน้าจอ
+#    (ขั้นตอนอยู่ใน docs/SETUP.md) — เมื่อรู้ resourceId แล้วให้ใส่ไว้บนสุดของแต่ละรายการ
+#
+# แต่ละรายการใส่ได้หลาย selector บอทจะลองตามลำดับ คีย์ที่ใช้ได้:
+#   resourceId, text, textContains, textMatches, description, descriptionContains, className, xpath
+#
+# เวอร์ชัน LINE ที่ใช้ตอนตรวจ selector: (ยังไม่ได้ตรวจ)
+
+home_tab:                   # แท็บ "หน้าหลัก" ด้านล่าง
+  - description: หน้าหลัก
+  - text: หน้าหลัก
+  - description: Home
+  - text: Home
+
+add_friend_button:          # ไอคอนเพิ่มเพื่อนมุมขวาบนของหน้าหลัก
+  - description: เพิ่มเพื่อน
+  - description: Add friends
+
+search_entry:               # เมนู "ค้นหา" ในหน้าเพิ่มเพื่อน
+  - text: ค้นหา
+  - text: Search
+
+phone_search_option:        # ตัวเลือก "หมายเลขโทรศัพท์" ในหน้าค้นหา
+  - text: หมายเลขโทรศัพท์
+  - text: Phone number
+
+search_input:               # ช่องกรอกเบอร์
+  - className: android.widget.EditText
+
+search_submit:              # ปุ่มค้นหา (ถ้าไม่เจอ บอทจะกด Enter แทน)
+  - description: ค้นหา
+  - description: Search
+
+result_add_button:          # ปุ่ม "เพิ่ม" ในผลการค้นหา
+  - text: เพิ่ม
+  - text: Add
+
+result_chat_button:         # ปุ่ม "แชท" ในผลการค้นหา (เป็นเพื่อนกันแล้ว)
+  - text: แชท               # ระวัง: แท็บ "แชท" ด้านล่างก็ใช้คำนี้ — เปลี่ยนเป็น resourceId เมื่อรู้แล้ว
+  - text: Chat
+
+result_not_found:           # ข้อความเมื่อค้นไม่เจอ
+  - textContains: ไม่พบ
+  - textContains: not found
+
+result_search_limited:      # ข้อความเมื่อถูกจำกัดการค้นหา
+  - textContains: จำกัด
+  - textContains: limit
+
+friend_name_edit:           # ไอคอนดินสอข้างชื่อเพื่อน (เปลี่ยนชื่อที่แสดง)
+  - descriptionContains: แก้ไข
+  - descriptionContains: Edit
+
+name_edit_input:            # ช่องแก้ชื่อ
+  - className: android.widget.EditText
+
+name_edit_save:             # ปุ่มบันทึกชื่อ
+  - text: บันทึก
+  - text: Save
+
+chat_input:                 # ช่องพิมพ์ข้อความในห้องแชท
+  - className: android.widget.EditText
+
+chat_send_button:           # ปุ่มส่งข้อความ
+  - description: ส่ง
+  - description: Send
