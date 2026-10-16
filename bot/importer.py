@@ -52,6 +52,11 @@ def plan_import(shops: Iterable[ShopRow], existing_phones: Set[str]) -> List[Out
     return rows
 
 
+def rows_to_store(rows: Iterable[OutreachRow]) -> List[OutreachRow]:
+    """Rows worth saving: shops with no phone yet stay out, so a later scan that finds a phone can queue them."""
+    return [row for row in rows if row.invalid_reason != "no_phone"]
+
+
 def summarize(rows: Iterable[OutreachRow]) -> Counter:
     """Count rows by outcome: "PENDING" or "INVALID:<reason>"."""
     return Counter(row.status if row.status == "PENDING" else f"INVALID:{row.invalid_reason}" for row in rows)

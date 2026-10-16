@@ -4,13 +4,13 @@ import argparse
 import sys
 
 from .config import database_url, device_serial, load_settings, load_yaml
-from .importer import plan_import, summarize
+from .importer import plan_import, rows_to_store, summarize
 from .phone import normalize_phone
 from .templates import TemplateError, friend_label, load_messages, render, shop_display_name
 
 _OUTCOME_LABELS = {
     "PENDING": "พร้อมทัก",
-    "INVALID:no_phone": "ไม่มีเบอร์",
+    "INVALID:no_phone": "ไม่มีเบอร์ (ไม่บันทึก — รอบหน้าถ้ามีเบอร์จะดึงใหม่)",
     "INVALID:landline": "เบอร์บ้าน/สำนักงาน (ค้นใน LINE ไม่ได้)",
     "INVALID:bad_format": "เบอร์ผิดรูปแบบ",
     "INVALID:duplicate": "เบอร์ซ้ำกับร้านที่มีอยู่แล้ว",
@@ -77,7 +77,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             conn.rollback()
             print("ยังไม่ได้บันทึก — ถ้าถูกต้องแล้วให้รันอีกครั้งพร้อม --commit")
             return 0
-        added = db.insert_outreach(conn, rows)
+        added = db.insert_outreach(conn, rows_to_store(rows))
         conn.commit()
     print(f"บันทึกเข้าคิวแล้ว {added} ร้าน")
     return 0

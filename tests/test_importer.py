@@ -1,4 +1,4 @@
-from bot.importer import ShopRow, plan_import, summarize
+from bot.importer import ShopRow, plan_import, rows_to_store, summarize
 
 
 def shop(place_id, phone, name="ร้านทดสอบ", age=10):
@@ -39,3 +39,8 @@ def test_plan_import_skips_phones_already_contacted_or_repeated():
 def test_summarize_counts_outcomes():
     rows = plan_import([shop("a", "0812345678"), shop("b", None), shop("c", None)], existing_phones=set())
     assert summarize(rows) == {"PENDING": 1, "INVALID:no_phone": 2}
+
+
+def test_shops_without_phone_are_not_stored():
+    rows = plan_import([shop("a", "0812345678"), shop("b", None), shop("c", "02 123 4567")], existing_phones=set())
+    assert [r.place_id for r in rows_to_store(rows)] == ["a", "c"]

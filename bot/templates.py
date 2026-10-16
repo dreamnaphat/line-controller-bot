@@ -30,7 +30,10 @@ def render(template: str, **values: Optional[str]) -> str:
 def shop_display_name(name: Optional[str], max_len: int = 40) -> str:
     """Shop name for messages, e.g. "ก๋วยเตี๋ยวเรือป้าแดง - Boat Noodle" -> "ร้านก๋วยเตี๋ยวเรือป้าแดง"."""
     cleaned = re.sub(r"\s+", " ", name or "").strip()
-    cleaned = re.split(r"\s[-|–—]\s|\s\|", cleaned)[0].strip()  # drop taglines after " - " or " | "
+    cleaned = re.split(r"\s[-|–—]\s|\s\|", cleaned)[0]  # drop taglines after " - " or " | "
+    cleaned = re.sub(r"\([^)]*\)|\[[^\]]*\]|@\S+", " ", cleaned)  # "(หมูตุ๋น & คากิ)", "@Nongmoo"
+    cleaned = re.split(r"\s+สาขา", cleaned)[0]  # "... สาขาปั้ม ปตท. ท่าจีน"
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if not cleaned:
         return "ทางร้าน"
     cleaned = cleaned[:max_len].rstrip()
