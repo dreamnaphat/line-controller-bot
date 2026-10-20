@@ -110,6 +110,11 @@ class LineApp:
         found = self.wait_for_any([key for key, _ in _RESULT_KEYS], timeout)
         return dict(_RESULT_KEYS)[found] if found else SearchResult.UNKNOWN
 
+    def result_name(self) -> Optional[str]:
+        """LINE profile name shown in the search result, if any."""
+        element = self.find("result_name") if self.selectors.get("result_name") else None
+        return element.get_text() if element is not None else None
+
     def add_friend(self) -> None:
         self.tap("result_add_button")
         self._require("result_chat_button", 10.0)
@@ -131,6 +136,15 @@ class LineApp:
     def open_chat(self) -> None:
         self.tap("result_chat_button")
         self._require("chat_input", 10.0)
+
+    def already_sent(self, text: str) -> bool:
+        """True if `text` already shows in the open chat (a previous run sent it but stopped before saving).
+
+        The chat box is emptied first so a leftover draft is not mistaken for a sent message.
+        """
+        self._require("chat_input", 10.0).set_text("")
+        snippet = text.splitlines()[0][:20]
+        return bool(self.d(textContains=snippet).exists)
 
     def send_message(self, text: str, send: bool = True, timeout: float = 5.0) -> bool:
         """Type `text` into the chat box; when `send` is True, tap send and confirm the box was cleared."""

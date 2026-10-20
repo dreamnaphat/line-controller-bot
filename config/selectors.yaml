@@ -65,3 +65,6 @@ chat_input:                 # ช่องพิมพ์ข้อความ�
 
 chat_send_button:           # ปุ่มส่ง
   - resourceId: jp.naver.line.android:id/chat_ui_send_button_image
+
+result_name:                # ชื่อโปรไฟล์ LINE ในผลค้นหา (บันทึกไว้ในคิว)
+  - resourceId: jp.naver.line.android:id/addfriend_name

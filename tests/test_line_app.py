@@ -1,8 +1,7 @@
 import pytest
 
 from bot.line_app import LineApp, LineUIError, SearchResult
-
-PACKAGE = "jp.naver.line.android"
+from tests.fakes import PACKAGE, FakeDevice, FakeElement, key
 
 SELECTORS = {
     "home_tab": [{"text": "home"}],
@@ -18,63 +17,6 @@ SELECTORS = {
     "chat_input": [{"resourceId": "chat-input"}],
     "chat_send_button": [{"description": "send"}],
 }
-
-
-def key(spec):
-    return tuple(sorted(spec.items()))
-
-
-class FakeElement:
-    def __init__(self, device, spec):
-        self.device, self.spec = device, spec
-
-    @property
-    def exists(self):
-        return key(self.spec) in {key(s) for s in self.device.screens[self.device.screen]}
-
-    def click(self):
-        self.device.log.append(("click", self.spec))
-        self.device.go(key(self.spec))
-
-    def set_text(self, text):
-        self.device.log.append(("type", self.spec, text))
-        self.device.text[key(self.spec)] = text
-
-    def get_text(self):
-        return self.device.text.get(key(self.spec), "")
-
-
-class FakeDevice:
-    """Each screen is a list of visible selector specs; `moves` maps (screen, action) to the next screen."""
-
-    def __init__(self, screens, moves, start="home", foreground=PACKAGE):
-        self.screens, self.moves, self.screen = screens, moves, start
-        self.foreground = foreground
-        self.log, self.text = [], {}
-
-    def go(self, action):
-        self.screen = self.moves.get((self.screen, action), self.screen)
-
-    def __call__(self, **spec):
-        return FakeElement(self, spec)
-
-    def xpath(self, xpath):
-        return FakeElement(self, {"xpath": xpath})
-
-    def press(self, name):
-        self.log.append(("press", name))
-        self.go(("press", name))
-
-    def app_start(self, package, **kwargs):
-        self.log.append(("start", package))
-        self.foreground = package
-
-    def app_stop(self, package):
-        self.log.append(("stop", package))
-        self.screen = "home"
-
-    def app_current(self):
-        return {"package": self.foreground}
 
 
 def search_device(result_screen):

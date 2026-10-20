@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS line_bot.outreach (
     attempts         SMALLINT     NOT NULL DEFAULT 0,
     last_error       TEXT,
     imported_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    searched_at      TIMESTAMPTZ,                   -- ค้นเบอร์ครั้งล่าสุด (ใช้นับโควตาต่อวัน)
     added_at         TIMESTAMPTZ,
     messaged_at      TIMESTAMPTZ,
     first_reply_at   TIMESTAMPTZ,
@@ -44,6 +45,9 @@ CREATE TABLE IF NOT EXISTS line_bot.outreach (
     CONSTRAINT outreach_shop_state_chk CHECK (
         shop_state IS NULL OR shop_state IN ('OPEN', 'NOT_OPEN_YET', 'CLOSED', 'UNKNOWN'))
 );
+
+-- คอลัมน์ที่เพิ่มทีหลัง (สำหรับฐานข้อมูลที่สร้างตารางไว้ก่อนแล้ว)
+ALTER TABLE line_bot.outreach ADD COLUMN IF NOT EXISTS searched_at TIMESTAMPTZ;
 
 -- คิวงาน: ร้าน PENDING ที่เปิดใหม่ล่าสุดก่อน
 CREATE INDEX IF NOT EXISTS outreach_queue_idx ON line_bot.outreach (status, age_days, id);

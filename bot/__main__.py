@@ -183,6 +183,84 @@ def cmd_test_clear(args: argparse.Namespace) -> int:
     return 0
 
 
+def _worker_log():
+    from datetime import datetime
+
+    from .device import LOG_DIR
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    path = LOG_DIR / "worker.log"
+
+    def log(message: str) -> None:
+        line = f"{datetime.now():%Y-%m-%d %H:%M:%S}  {message}"
+        print(line)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+    return log
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    from . import db
+    from .device import LOG_DIR, connect, device_errors, dump_screen
+    from .line_app import LineApp
+    from .worker import Worker, WorkerSettings
+
+    settings = load_settings()
+    allowed = None
+    if test_mode(settings):
+        allowed = test_phones()
+        if not allowed:
+            print("โหมดทดสอบเปิดอยู่แต่ยังไม่มี TEST_PHONES ในไฟล์ .env — บอทจะไม่ทักใครเลย")
+            return 1
+    config = WorkerSettings.from_config(settings)
+    messages = load_messages()
+    business = settings.get("business", {})
+    try:
+        render(messages[config.opener_id], shop="ร้านทดสอบ", factory=business.get("factory_name"),
+               persona=business.get("persona_name"), source=business.get("source_text"))
+    except TemplateError as exc:
+        print(f"ข้อความ {config.opener_id}: {exc} (ใส่ค่าใน config/settings.yaml หัวข้อ business)")
+        return 1
+
+    log = _worker_log()
+    d = connect(device_serial())
+    device_id = device_serial() or d.serial
+    app = LineApp(d, load_yaml("selectors.yaml"), settings["device"]["line_package"])
+    with db.connect(database_url(), autocommit=True) as conn:
+        if not db.schema_exists(conn):
+            print("ยังไม่มีตารางของบอท — รัน python -m bot init-db ก่อน")
+            return 1
+        worker = Worker(conn, app, config, messages, business, device_id, settings, allowed, log=log,
+                        on_error=lambda item: dump_screen(d, f"worker-{item.code}", LOG_DIR))
+        log(f"เริ่มทำงาน: มือถือ {device_id}, โควตา {config.daily_quota} ร้าน/วัน"
+            + (f", โหมดทดสอบ ({len(allowed)} เบอร์)" if allowed is not None else ", ทักร้านจริง"))
+        try:
+            reason = worker.run(once=args.once, ignore_hours=args.now, max_shops=args.max)
+        except device_errors() as exc:
+            log(f"หยุด: มือถือมีปัญหา ({exc}) — รัน python -m bot doctor เพื่อตรวจ")
+            return 1
+    log(f"หยุด: {reason}")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    from . import db
+
+    labels = {"PENDING": "รอทัก", "ADDED": "เพิ่มเพื่อนแล้ว รอส่งข้อความ", "MESSAGED": "ส่งข้อความแล้ว",
+              "NOT_FOUND": "ค้นไม่เจอใน LINE", "INVALID": "เบอร์ใช้ไม่ได้", "ERROR": "ทำไม่สำเร็จ ต้องให้คนดู",
+              "REPLIED": "ร้านตอบแล้ว", "PITCHED": "บอทตอบกลับแล้ว", "DECLINED": "ปฏิเสธ", "CLOSED": "ปิดกิจการ",
+              "NO_REPLY": "ไม่ตอบ", "INTERESTED": "สนใจ", "CUSTOMER": "เป็นลูกค้า"}
+    with db.connect(database_url()) as conn:
+        summary = db.queue_summary(conn)
+    if not summary:
+        print("คิวว่าง")
+        return 0
+    for status, count in sorted(summary.items(), key=lambda item: -item[1]):
+        print(f"  {labels.get(status, status)} ({status}): {count}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m bot", description="บอททักร้านทาง LINE")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -205,6 +283,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_test_add)
 
     sub.add_parser("test-clear", help="ลบร้านทดสอบทั้งหมดออกจากคิว").set_defaults(func=cmd_test_clear)
+
+    p = sub.add_parser("run", help="ทักร้านจากคิวตามโควตาและเวลาทำการ (ทำงานต่อเนื่อง)")
+    p.add_argument("--once", action="store_true", help="ทำแค่ 1 ร้านแล้วหยุด")
+    p.add_argument("--now", action="store_true", help="ไม่สนช่วงเวลาทักร้าน (ใช้ตอนทดสอบ)")
+    p.add_argument("--max", type=int, help="หยุดเมื่อทำครบกี่ร้าน")
+    p.set_defaults(func=cmd_run)
+
+    sub.add_parser("status", help="ดูจำนวนร้านในคิวแยกตามสถานะ").set_defaults(func=cmd_status)
 
     p = sub.add_parser("poc", help="ทดลองกับเบอร์ทดสอบ 1 เบอร์: ค้นหา → เพิ่มเพื่อน → พิมพ์ข้อความแรก")
     p.add_argument("--phone", required=True, help="เบอร์ทดสอบ (ใช้เบอร์ของทีมเท่านั้น)")
