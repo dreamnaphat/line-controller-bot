@@ -231,6 +231,11 @@ def main(argv=None) -> int:
     except PhoneConnectionError as exc:
         print(exc)
         return 1
+    except ModuleNotFoundError as exc:
+        print(f"ไม่พบไลบรารี {exc.name} — ยังไม่ได้เปิด .venv หรือยังไม่ได้ติดตั้ง:\n"
+              "  .venv\\Scripts\\activate   (Windows)   หรือ   source .venv/bin/activate   (macOS)\n"
+              "  pip install -r requirements.txt")
+        return 1
     except KeyboardInterrupt:
         print("\nหยุดแล้ว")
         return 130
