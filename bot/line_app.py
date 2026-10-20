@@ -96,6 +96,8 @@ class LineApp:
 
     def search_phone(self, phone: str, timeout: float = 15.0) -> SearchResult:
         self.tap("add_friend_button")
+        # The Home screen also shows a "ค้นหา" bar, so wait until the Add friends page is really open.
+        self._require("add_friend_page", 10.0)
         self.tap("search_entry")
         self.tap("phone_search_option")
         self.type_into("search_input", phone)
@@ -113,9 +115,12 @@ class LineApp:
         self._require("result_chat_button", 10.0)
 
     def rename_friend(self, label: str) -> None:
+        """From the search result, open the friend's profile and set the display name only we can see."""
+        self.tap("result_profile_open")
         self.tap("friend_name_edit")
         self.type_into("name_edit_input", label)
         self.tap("name_edit_save")
+        self._require("friend_name_edit", 10.0)  # back on the profile, whose "แชท" button open_chat uses
 
     def open_chat(self) -> None:
         self.tap("result_chat_button")

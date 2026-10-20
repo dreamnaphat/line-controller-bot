@@ -1,68 +1,65 @@
 # selector ของหน้าจอแอป LINE (jp.naver.line.android) ที่บอทใช้กดปุ่ม
 #
-# ⚠️ ค่าตอนนี้เป็นการเดาจากข้อความบนหน้าจอ ต้องตรวจและแก้หลังรัน `python -m bot dump` บนแต่ละหน้าจอ
-#    (ขั้นตอนอยู่ใน docs/SETUP.md) — เมื่อรู้ resourceId แล้วให้ใส่ไว้บนสุดของแต่ละรายการ
+# ตรวจจากหน้าจอจริง: HONOR DNY-NX9 (Honor 400 Pro), Android 16, LINE 26.15.1, ภาษาไทย — 20 ต.ค. 2026
+# ถ้า LINE อัปเดตแล้วบอทหาปุ่มไม่เจอ ให้รัน `python -m bot dump <ชื่อหน้าจอ>` แล้วแก้ไฟล์นี้
 #
 # แต่ละรายการใส่ได้หลาย selector บอทจะลองตามลำดับ คีย์ที่ใช้ได้:
-#   resourceId, text, textContains, textMatches, description, descriptionContains, className, xpath
-#
-# เวอร์ชัน LINE ที่ใช้ตอนตรวจ selector: (ยังไม่ได้ตรวจ)
+#   resourceId, text, textContains, textStartsWith, description, descriptionContains,
+#   descriptionStartsWith, className, xpath
 
-home_tab:                   # แท็บ "หน้าหลัก" ด้านล่าง
-  - description: หน้าหลัก
-  - text: หน้าหลัก
-  - description: Home
-  - text: Home
+home_tab:                   # แท็บ "หน้าหลัก" ด้านล่าง (desc เป็น "แท็บหน้าหลัก" หรือ "แท็บหน้าหลัก เลือกแล้ว")
+  - resourceId: jp.naver.line.android:id/bnb_button_clickable_area
+    descriptionStartsWith: แท็บหน้าหลัก
 
 add_friend_button:          # ไอคอนเพิ่มเพื่อนมุมขวาบนของหน้าหลัก
-  - description: เพิ่มเพื่อน
-  - description: Add friends
+  - resourceId: jp.naver.line.android:id/add_friends_header_button
+
+add_friend_page:            # ใช้ยืนยันว่าเข้าหน้า "เพิ่มเพื่อน" แล้ว (หน้านี้ไม่มี resourceId)
+  - text: คิวอาร์โค้ดของฉัน
 
 search_entry:               # เมนู "ค้นหา" ในหน้าเพิ่มเพื่อน
   - text: ค้นหา
-  - text: Search
 
-phone_search_option:        # ตัวเลือก "หมายเลขโทรศัพท์" ในหน้าค้นหา
-  - text: หมายเลขโทรศัพท์
-  - text: Phone number
+phone_search_option:        # ตัวเลือก "หมายเลขโทรศัพท์" ในหน้าค้นหาเพื่อน
+  - resourceId: jp.naver.line.android:id/addfriend_by_userphone_status_radio
 
-search_input:               # ช่องกรอกเบอร์
-  - className: android.widget.EditText
+search_input:               # ช่องกรอกเบอร์ (รหัสประเทศ +66 ตั้งไว้แล้ว ใส่เบอร์แบบ 0812345678 ได้เลย)
+  - resourceId: jp.naver.line.android:id/addfriend_by_phone_search_text
 
-search_submit:              # ปุ่มค้นหา (ถ้าไม่เจอ บอทจะกด Enter แทน)
-  - description: ค้นหา
-  - description: Search
+search_submit:              # ปุ่มค้นหา (ห้ามใช้ desc "ค้นหา" เพราะชนกับปุ่มบนคีย์บอร์ด)
+  - resourceId: jp.naver.line.android:id/addfriend_by_phone_search_button
 
-result_add_button:          # ปุ่ม "เพิ่ม" ในผลการค้นหา
-  - text: เพิ่ม
-  - text: Add
+result_add_button:          # ผลค้นหา: ยังไม่เป็นเพื่อน → ปุ่ม "เพิ่มเพื่อน"
+  - resourceId: jp.naver.line.android:id/addfriend_add_button
+    text: เพิ่มเพื่อน
 
-result_chat_button:         # ปุ่ม "แชท" ในผลการค้นหา (เป็นเพื่อนกันแล้ว)
-  - text: แชท               # ระวัง: แท็บ "แชท" ด้านล่างก็ใช้คำนี้ — เปลี่ยนเป็น resourceId เมื่อรู้แล้ว
-  - text: Chat
+result_chat_button:         # ปุ่ม "แชท" — ในผลค้นหา (เป็นเพื่อนแล้ว/เพิ่งเพิ่ม) หรือในหน้าโปรไฟล์เพื่อน
+  - resourceId: jp.naver.line.android:id/addfriend_add_button
+    text: แชท
+  - resourceId: jp.naver.line.android:id/user_profile_button_text
+    text: แชท
 
-result_not_found:           # ข้อความเมื่อค้นไม่เจอ
-  - textContains: ไม่พบ
-  - textContains: not found
+result_not_found:           # ผลค้นหา: "ไม่พบผู้ใช้"
+  - textContains: ไม่พบผู้ใช้
 
-result_search_limited:      # ข้อความเมื่อถูกจำกัดการค้นหา
+result_search_limited:      # ข้อความเมื่อถูกจำกัดการค้นหา — ยังไม่เคยเห็นของจริง เป็นการเดา
   - textContains: จำกัด
-  - textContains: limit
+  - textContains: ภายหลัง
 
-friend_name_edit:           # ไอคอนดินสอข้างชื่อเพื่อน (เปลี่ยนชื่อที่แสดง)
-  - descriptionContains: แก้ไข
-  - descriptionContains: Edit
+result_profile_open:        # รูปโปรไฟล์ในผลค้นหา — แตะเพื่อเปิดหน้าโปรไฟล์ (ยังไม่ได้ยืนยัน)
+  - resourceId: jp.naver.line.android:id/addfriend_image
 
-name_edit_input:            # ช่องแก้ชื่อ
-  - className: android.widget.EditText
+friend_name_edit:           # ไอคอนดินสอข้างชื่อในหน้าโปรไฟล์เพื่อน
+  - resourceId: jp.naver.line.android:id/user_profile_edit_name
 
-name_edit_save:             # ปุ่มบันทึกชื่อ
-  - text: บันทึก
-  - text: Save
+name_edit_input:            # ช่องแก้ชื่อ (ยาวได้สูงสุด 20 ตัวอักษร)
+  - resourceId: jp.naver.line.android:id/edit_name
+
+name_edit_save:             # ปุ่ม "บันทึก"
+  - resourceId: jp.naver.line.android:id/save_button
 
 chat_input:                 # ช่องพิมพ์ข้อความในห้องแชท
-  - className: android.widget.EditText
+  - resourceId: jp.naver.line.android:id/chat_ui_message_edit
 
-chat_send_button:           # ปุ่มส่งข้อความ
-  - description: ส่ง
-  - description: Send
+chat_send_button:           # ปุ่มส่ง
+  - resourceId: jp.naver.line.android:id/chat_ui_send_button_image

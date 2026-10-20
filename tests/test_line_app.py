@@ -7,6 +7,7 @@ PACKAGE = "jp.naver.line.android"
 SELECTORS = {
     "home_tab": [{"text": "home"}],
     "add_friend_button": [{"description": "add-friends"}],
+    "add_friend_page": [{"text": "my-qr"}],
     "search_entry": [{"text": "search"}],
     "phone_search_option": [{"text": "phone"}],
     "search_input": [{"className": "EditText"}],
@@ -79,7 +80,7 @@ class FakeDevice:
 def search_device(result_screen):
     screens = {
         "home": [{"text": "home"}, {"description": "add-friends"}],
-        "add": [{"text": "search"}],
+        "add": [{"text": "my-qr"}, {"text": "search"}],
         "search": [{"text": "phone"}, {"className": "EditText"}],
         "found": [{"text": "add"}],
         "friend": [{"resourceId": "chat-button"}],
@@ -183,3 +184,49 @@ def test_tap_fails_when_element_never_appears():
     app = LineApp(FakeDevice({"home": []}, {}), SELECTORS, PACKAGE, poll_interval=0.001)
     with pytest.raises(LineUIError, match="add_friend_button"):
         app.tap("add_friend_button", timeout=0.01)
+
+
+def test_search_waits_for_add_friend_page_before_tapping_search():
+    device = search_device("found")
+    device.screens["add"] = [{"text": "search"}]  # page marker never appears
+    app = app_for(device)
+    app._require = lambda key, timeout: (_ for _ in ()).throw(LineUIError(key)) if key == "add_friend_page" \
+        else LineApp._require(app, key, timeout)
+    with pytest.raises(LineUIError, match="add_friend_page"):
+        app.search_phone("0812345678")
+    assert ("click", {"text": "search"}) not in device.log
+
+
+def test_rename_opens_profile_edits_name_and_returns_to_profile():
+    selectors = dict(SELECTORS,
+                     result_profile_open=[{"resourceId": "photo"}],
+                     friend_name_edit=[{"resourceId": "pencil"}],
+                     name_edit_input=[{"resourceId": "name"}],
+                     name_edit_save=[{"resourceId": "save"}])
+    screens = {
+        "result": [{"resourceId": "photo"}, {"resourceId": "chat-button"}],
+        "profile": [{"resourceId": "pencil"}, {"resourceId": "chat-button"}],
+        "edit": [{"resourceId": "name"}, {"resourceId": "save"}],
+    }
+    moves = {
+        ("result", key({"resourceId": "photo"})): "profile",
+        ("profile", key({"resourceId": "pencil"})): "edit",
+        ("edit", key({"resourceId": "save"})): "profile",
+    }
+    device = FakeDevice(screens, moves, start="result")
+    app_for(device, selectors).rename_friend("C1 ร้านป้าแดง")
+    assert ("type", {"resourceId": "name"}, "C1 ร้านป้าแดง") in device.log
+    assert device.screen == "profile"
+
+
+def test_config_has_every_selector_the_flows_use():
+    import re
+    from pathlib import Path
+
+    from bot.config import load_yaml
+
+    source = Path("bot/line_app.py").read_text(encoding="utf-8")
+    used = set(re.findall(r'"((?:home|add|search|phone|result|friend|name|chat)_[a-z_]+)"', source))
+    configured = load_yaml("selectors.yaml")
+    assert used - set(configured) == set()
+    assert all(configured[k] for k in used)
