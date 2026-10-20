@@ -197,26 +197,28 @@ def test_search_waits_for_add_friend_page_before_tapping_search():
     assert ("click", {"text": "search"}) not in device.log
 
 
-def test_rename_opens_profile_edits_name_and_returns_to_profile():
+def test_rename_goes_through_chat_header_and_returns_to_chat():
     selectors = dict(SELECTORS,
-                     result_profile_open=[{"resourceId": "photo"}],
+                     chat_header_name=[{"resourceId": "header", "clickable": True}],
                      friend_name_edit=[{"resourceId": "pencil"}],
                      name_edit_input=[{"resourceId": "name"}],
-                     name_edit_save=[{"resourceId": "save"}])
+                     name_edit_save=[{"resourceId": "save"}],
+                     profile_close=[{"resourceId": "close"}])
     screens = {
-        "result": [{"resourceId": "photo"}, {"resourceId": "chat-button"}],
-        "profile": [{"resourceId": "pencil"}, {"resourceId": "chat-button"}],
+        "chat": [{"resourceId": "chat-input"}, {"resourceId": "header", "clickable": True}],
+        "profile": [{"resourceId": "pencil"}, {"resourceId": "close"}],
         "edit": [{"resourceId": "name"}, {"resourceId": "save"}],
     }
     moves = {
-        ("result", key({"resourceId": "photo"})): "profile",
+        ("chat", key({"resourceId": "header", "clickable": True})): "profile",
         ("profile", key({"resourceId": "pencil"})): "edit",
         ("edit", key({"resourceId": "save"})): "profile",
+        ("profile", key({"resourceId": "close"})): "chat",
     }
-    device = FakeDevice(screens, moves, start="result")
+    device = FakeDevice(screens, moves, start="chat")
     app_for(device, selectors).rename_friend("C1 ร้านป้าแดง")
     assert ("type", {"resourceId": "name"}, "C1 ร้านป้าแดง") in device.log
-    assert device.screen == "profile"
+    assert device.screen == "chat"
 
 
 def test_config_has_every_selector_the_flows_use():
@@ -226,7 +228,7 @@ def test_config_has_every_selector_the_flows_use():
     from bot.config import load_yaml
 
     source = Path("bot/line_app.py").read_text(encoding="utf-8")
-    used = set(re.findall(r'"((?:home|add|search|phone|result|friend|name|chat)_[a-z_]+)"', source))
+    used = set(re.findall(r'"((?:home|add|search|phone|result|friend|name|chat|profile)_[a-z_]+)"', source))
     configured = load_yaml("selectors.yaml")
     assert used - set(configured) == set()
     assert all(configured[k] for k in used)

@@ -131,9 +131,9 @@ def cmd_poc(args: argparse.Namespace) -> int:
             return 0 if result == SearchResult.NOT_FOUND else 1
         if result == SearchResult.CAN_ADD:
             app.add_friend()
+        app.open_chat()
         if args.rename:
             app.rename_friend(friend_label(args.code, args.shop, settings["device"]["friend_label_max_len"]))
-        app.open_chat()
         if app.send_message(text, send=args.send):
             print("ส่งข้อความแล้ว")
         elif args.send:

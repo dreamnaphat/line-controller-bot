@@ -33,10 +33,8 @@ result_add_button:          # ผลค้นหา: ยังไม่เป็
   - resourceId: jp.naver.line.android:id/addfriend_add_button
     text: เพิ่มเพื่อน
 
-result_chat_button:         # ปุ่ม "แชท" — ในผลค้นหา (เป็นเพื่อนแล้ว/เพิ่งเพิ่ม) หรือในหน้าโปรไฟล์เพื่อน
+result_chat_button:         # ปุ่ม "แชท" ในผลค้นหา (เป็นเพื่อนแล้ว หรือเพิ่งกดเพิ่มเพื่อน)
   - resourceId: jp.naver.line.android:id/addfriend_add_button
-    text: แชท
-  - resourceId: jp.naver.line.android:id/user_profile_button_text
     text: แชท
 
 result_not_found:           # ผลค้นหา: "ไม่พบผู้ใช้"
@@ -46,8 +44,9 @@ result_search_limited:      # ข้อความเมื่อถูกจ�
   - textContains: จำกัด
   - textContains: ภายหลัง
 
-result_profile_open:        # รูปโปรไฟล์ในผลค้นหา — แตะเพื่อเปิดหน้าโปรไฟล์ (ยังไม่ได้ยืนยัน)
-  - resourceId: jp.naver.line.android:id/addfriend_image
+chat_header_name:           # ชื่อเพื่อนที่แถบบนของห้องแชท — แตะแล้วเปิดหน้าโปรไฟล์ (รูปในผลค้นหากดไม่ได้)
+  - resourceId: jp.naver.line.android:id/main_view_group
+    clickable: true
 
 friend_name_edit:           # ไอคอนดินสอข้างชื่อในหน้าโปรไฟล์เพื่อน
   - resourceId: jp.naver.line.android:id/user_profile_edit_name
@@ -57,6 +56,9 @@ name_edit_input:            # ช่องแก้ชื่อ (ยาวได
 
 name_edit_save:             # ปุ่ม "บันทึก"
   - resourceId: jp.naver.line.android:id/save_button
+
+profile_close:              # ปุ่มปิดหน้าโปรไฟล์ กลับไปห้องแชท
+  - resourceId: jp.naver.line.android:id/user_profile_back
 
 chat_input:                 # ช่องพิมพ์ข้อความในห้องแชท
   - resourceId: jp.naver.line.android:id/chat_ui_message_edit

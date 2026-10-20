@@ -115,12 +115,18 @@ class LineApp:
         self._require("result_chat_button", 10.0)
 
     def rename_friend(self, label: str) -> None:
-        """From the search result, open the friend's profile and set the display name only we can see."""
-        self.tap("result_profile_open")
+        """From the open chat, set the friend's display name that only we can see, then return to the chat.
+
+        The profile photo in the search result cannot be tapped, but the name in the chat header opens the profile.
+        """
+        self._require("chat_input", 10.0)
+        self.tap("chat_header_name")
         self.tap("friend_name_edit")
         self.type_into("name_edit_input", label)
         self.tap("name_edit_save")
-        self._require("friend_name_edit", 10.0)  # back on the profile, whose "แชท" button open_chat uses
+        self._require("friend_name_edit", 10.0)  # saved, back on the profile
+        self.tap("profile_close")
+        self._require("chat_input", 10.0)
 
     def open_chat(self) -> None:
         self.tap("result_chat_button")
