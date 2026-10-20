@@ -123,3 +123,26 @@ def test_import_filters_by_food_type_and_age(conn):
 def test_invalid_status_is_rejected(conn):
     with pytest.raises(psycopg.errors.CheckViolation):
         conn.execute("INSERT INTO line_bot.outreach (place_id, shop_name, status) VALUES ('x', 'x', 'WRONG')")
+
+
+def test_test_shops_can_be_added_reset_and_cleared(conn):
+    add_shop(conn, "real", "0811111111", age=1)
+    db.insert_outreach(conn, plan_import(db.fetch_new_shops(conn, IMPORT_CFG), set()))
+
+    code = db.add_test_shop(conn, "0899999999", "ร้านทดสอบ 1")
+    conn.execute("UPDATE line_bot.outreach SET status = 'MESSAGED', messaged_at = now() WHERE code = %s", (code,))
+    assert db.add_test_shop(conn, "0899999999", "ร้านทดสอบ 1") == code  # same row, reset
+    assert conn.execute("SELECT status, messaged_at FROM line_bot.outreach WHERE code = %s",
+                        (code,)).fetchone() == ("PENDING", None)
+
+    conn.execute("INSERT INTO line_bot.messages (outreach_id, direction, sender, text, source) "
+                 "SELECT id, 'out', 'bot', 'hi', 'bot' FROM line_bot.outreach WHERE code = %s", (code,))
+    assert db.clear_test_shops(conn) == 1
+    assert [r[0] for r in conn.execute("SELECT place_id FROM line_bot.outreach")] == ["real"]
+
+
+def test_test_shop_cannot_reuse_a_real_shop_phone(conn):
+    add_shop(conn, "real", "0811111111", age=1)
+    db.insert_outreach(conn, plan_import(db.fetch_new_shops(conn, IMPORT_CFG), set()))
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        db.add_test_shop(conn, "0811111111", "ร้านทดสอบ")

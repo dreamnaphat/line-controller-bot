@@ -16,6 +16,7 @@
 | `python -m bot dump <ชื่อหน้าจอ>` | เก็บภาพและโครงสร้างหน้าจอ LINE ไว้หา selector |
 | `python -m bot init-db` | สร้างตารางของบอทใน Neon (รันซ้ำได้) |
 | `python -m bot import [--commit]` | ดึงร้านใหม่จาก `"Shop"` เข้าคิว (ไม่ใส่ `--commit` = ดูตัวอย่างเท่านั้น) |
+| `python -m bot test-add --phone 08xxxxxxxx` / `test-clear` | เพิ่ม/ลบร้านสมมติที่ใช้เบอร์ทีม (โหมดทดสอบทักได้เฉพาะเบอร์ใน `TEST_PHONES`) |
 | `python -m bot poc --phone 08xxxxxxxx [--step] [--rename] [--send]` | ทดลองค้นเบอร์ เพิ่มเพื่อน และพิมพ์ข้อความแรกกับเบอร์ทดสอบ |
 
 ## เอกสาร

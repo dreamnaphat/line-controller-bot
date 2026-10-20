@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 import yaml
 
@@ -36,3 +36,12 @@ def database_url() -> str:
 def device_serial() -> Optional[str]:
     _load_env()
     return os.environ.get("DEVICE_SERIAL", "").strip() or None
+
+
+def test_phones() -> Set[str]:
+    """Team phone numbers from TEST_PHONES in .env (comma separated), normalized like shop phones."""
+    from .phone import normalize_phone
+
+    _load_env()
+    raw = os.environ.get("TEST_PHONES", "")
+    return {p for p in (normalize_phone(part).phone for part in raw.split(",")) if p}

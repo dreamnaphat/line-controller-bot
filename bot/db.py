@@ -84,3 +84,32 @@ def insert_outreach(conn: psycopg.Connection, rows: Iterable[OutreachRow]) -> in
             for r in rows
         ])
     return count_outreach(conn) - before
+
+
+TEST_PREFIX = "TEST-"
+
+# Re-adding a test shop resets it to a fresh PENDING row so the same team number can be tested again.
+_ADD_TEST_SHOP_SQL = """
+INSERT INTO line_bot.outreach (place_id, shop_name, phone_raw, phone, status, notes)
+VALUES (%(place_id)s, %(name)s, %(phone)s, %(phone)s, 'PENDING', 'ร้านทดสอบ')
+ON CONFLICT (place_id) DO UPDATE SET
+    shop_name = EXCLUDED.shop_name, status = 'PENDING', shop_state = NULL, reply_group = NULL,
+    opener_variant = NULL, line_name = NULL, needs_human = false, do_not_contact = false, attempts = 0,
+    last_error = NULL, added_at = NULL, messaged_at = NULL, first_reply_at = NULL, pitched_at = NULL,
+    last_reply_at = NULL, last_reply_text = NULL, updated_at = now()
+RETURNING code
+"""
+
+
+def add_test_shop(conn: psycopg.Connection, phone: str, name: str) -> str:
+    """Queue a fake shop for a team phone number and return its code (e.g. "C263")."""
+    params = {"place_id": TEST_PREFIX + phone, "name": name, "phone": phone}
+    return conn.execute(_ADD_TEST_SHOP_SQL, params).fetchone()[0]
+
+
+def clear_test_shops(conn: psycopg.Connection) -> int:
+    """Delete every test shop and its message history; return how many shops were removed."""
+    pattern = TEST_PREFIX + "%"
+    conn.execute("DELETE FROM line_bot.messages WHERE outreach_id IN "
+                 "(SELECT id FROM line_bot.outreach WHERE place_id LIKE %s)", (pattern,))
+    return conn.execute("DELETE FROM line_bot.outreach WHERE place_id LIKE %s", (pattern,)).rowcount

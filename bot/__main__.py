@@ -3,9 +3,10 @@
 import argparse
 import sys
 
-from .config import database_url, device_serial, load_settings, load_yaml
+from .config import database_url, device_serial, load_settings, load_yaml, test_phones
 from .importer import plan_import, rows_to_store, summarize
 from .phone import normalize_phone
+from .safety import blocked_reason, test_mode
 from .templates import TemplateError, friend_label, load_messages, render, shop_display_name
 
 _OUTCOME_LABELS = {
@@ -92,6 +93,10 @@ def cmd_poc(args: argparse.Namespace) -> int:
     if phone.phone is None:
         print(f"เบอร์ {args.phone!r} ใช้ค้นใน LINE ไม่ได้ ({phone.reason})")
         return 1
+    reason = blocked_reason(phone.phone, settings, test_phones())
+    if reason:
+        print(reason)
+        return 1
 
     business = settings.get("business", {})
     opener_id = settings["outreach"]["opener"]
@@ -145,6 +150,39 @@ def cmd_poc(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_test_add(args: argparse.Namespace) -> int:
+    import psycopg
+
+    from . import db
+
+    phone = normalize_phone(args.phone)
+    if phone.phone is None:
+        print(f"เบอร์ {args.phone!r} ใช้ค้นใน LINE ไม่ได้ ({phone.reason})")
+        return 1
+    if phone.phone not in test_phones():
+        print(f"เพิ่มได้เฉพาะเบอร์ทีมที่อยู่ใน TEST_PHONES ในไฟล์ .env ({phone.phone} ไม่อยู่ในรายการ)")
+        return 1
+    url = database_url()
+    with db.connect(url) as conn:
+        try:
+            code = db.add_test_shop(conn, phone.phone, args.name)
+        except psycopg.errors.UniqueViolation:
+            conn.rollback()
+            print(f"เบอร์ {phone.phone} ซ้ำกับร้านจริงที่อยู่ในคิวแล้ว ใช้เบอร์ทีมเบอร์อื่นแทน")
+            return 1
+    print(f"เพิ่มร้านทดสอบ {code} \"{args.name}\" เบอร์ {phone.phone} เข้าคิวแล้ว (สถานะ PENDING)")
+    return 0
+
+
+def cmd_test_clear(args: argparse.Namespace) -> int:
+    from . import db
+
+    with db.connect(database_url()) as conn:
+        removed = db.clear_test_shops(conn)
+    print(f"ลบร้านทดสอบออกจากคิวแล้ว {removed} ร้าน")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m bot", description="บอททักร้านทาง LINE")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -160,6 +198,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("import", help="ดึงร้านใหม่จากตาราง Shop เข้าคิว")
     p.add_argument("--commit", action="store_true", help="บันทึกจริง (ถ้าไม่ใส่ จะแสดงตัวอย่างเท่านั้น)")
     p.set_defaults(func=cmd_import)
+
+    p = sub.add_parser("test-add", help="เพิ่มร้านทดสอบ (เบอร์ทีมใน TEST_PHONES) เข้าคิว")
+    p.add_argument("--phone", required=True, help="เบอร์ทีมที่อยู่ใน TEST_PHONES")
+    p.add_argument("--name", default="ร้านทดสอบ", help="ชื่อร้านสมมติ")
+    p.set_defaults(func=cmd_test_add)
+
+    sub.add_parser("test-clear", help="ลบร้านทดสอบทั้งหมดออกจากคิว").set_defaults(func=cmd_test_clear)
 
     p = sub.add_parser("poc", help="ทดลองกับเบอร์ทดสอบ 1 เบอร์: ค้นหา → เพิ่มเพื่อน → พิมพ์ข้อความแรก")
     p.add_argument("--phone", required=True, help="เบอร์ทดสอบ (ใช้เบอร์ของทีมเท่านั้น)")
@@ -177,6 +222,8 @@ def main(argv=None) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")  # never crash on consoles that cannot show Thai
     args = build_parser().parse_args(argv)
+    if test_mode(load_settings()):
+        print("[โหมดทดสอบ] ทักได้เฉพาะเบอร์ใน TEST_PHONES")
     from .device import PhoneConnectionError
 
     try:
