@@ -129,24 +129,38 @@ class QueueItem:
     attempts: int
 
 
-# Unfinished shops (ADDED) first, then the newest shops.
-_NEXT_SQL = """
-SELECT id, code, shop_name, phone, status, attempts FROM line_bot.outreach
+# Shops the worker still has to contact.
+_QUEUE_WHERE = """
 WHERE status IN ('PENDING', 'ADDED') AND phone IS NOT NULL AND NOT do_not_contact
   AND (%(only)s::text[] IS NULL OR phone = ANY(%(only)s::text[]))
+"""
+
+# Unfinished shops (ADDED) first, then the newest shops.
+_NEXT_SQL = f"""
+SELECT id, code, shop_name, phone, status, attempts FROM line_bot.outreach
+{_QUEUE_WHERE}
 ORDER BY (status = 'ADDED') DESC, age_days ASC NULLS LAST, id
 LIMIT 1
 """
 
 _UPDATABLE = {"status", "searched_at", "added_at", "messaged_at", "line_name", "opener_variant", "device_id",
               "last_error", "attempts", "shop_state", "reply_group", "needs_human", "do_not_contact", "first_reply_at",
-              "last_reply_at", "last_reply_text", "pitched_at", "line_chat_id", "pending_reply"}
+              "last_reply_at", "last_reply_text", "pitched_at", "line_chat_id", "pending_reply", "notes", "recontact_on"}
 
 
 def next_in_queue(conn: psycopg.Connection, only_phones: Optional[Collection[str]]) -> Optional[QueueItem]:
     """Next shop to contact; with `only_phones` (test mode) only shops using those numbers."""
     row = conn.execute(_NEXT_SQL, {"only": sorted(only_phones) if only_phones is not None else None}).fetchone()
     return QueueItem(*row) if row else None
+
+
+def queue_left(conn: psycopg.Connection, only_phones: Optional[Collection[str]],
+               since: datetime) -> Tuple[int, Optional[datetime]]:
+    """(shops in the queue not searched since `since`, when the oldest queued shop was imported)."""
+    return conn.execute(
+        f"SELECT count(*) FILTER (WHERE searched_at IS NULL OR searched_at < %(since)s), min(imported_at)"
+        f" FROM line_bot.outreach {_QUEUE_WHERE}",
+        {"only": sorted(only_phones) if only_phones is not None else None, "since": since}).fetchone()
 
 
 def update_outreach(conn: psycopg.Connection, outreach_id: int, **fields: Any) -> None:
@@ -173,10 +187,12 @@ def record_outgoing(conn: psycopg.Connection, outreach_id: int, text: str) -> No
                  " VALUES (%s, 'out', 'bot', %s, 'bot')", (outreach_id, text))
 
 
-def searches_since(conn: psycopg.Connection, device_id: str, since: datetime) -> int:
-    """How many shops this device searched for since `since` (LINE limits searches, whatever the result)."""
+def searches_since(conn: psycopg.Connection, device_id: Optional[str], since: datetime) -> int:
+    """How many shops this device (None = any device) searched for since `since`.
+    LINE limits searches whatever the result, so not-found searches count too."""
     return conn.execute(
-        "SELECT count(*) FROM line_bot.outreach WHERE device_id = %(device)s AND searched_at >= %(since)s",
+        "SELECT count(*) FROM line_bot.outreach WHERE searched_at >= %(since)s"
+        " AND (%(device)s::text IS NULL OR device_id = %(device)s::text)",
         {"device": device_id, "since": since},
     ).fetchone()[0]
 

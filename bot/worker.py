@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, Optional, Set, Tuple
 
 from . import db
 from .line_app import LineApp, LineUIError, SearchResult
+from .quota import QuotaRule, describe_plan, today_plan
 from .safety import blocked_reason
 from .schedule import next_window_start, parse_window, start_of_day, within
 from .templates import friend_label, render, shop_display_name
@@ -25,7 +26,7 @@ class Outcome(str, Enum):
 @dataclass(frozen=True)
 class WorkerSettings:
     opener_id: str
-    daily_quota: int
+    quota: QuotaRule
     window: Tuple[Any, Any]
     delay_range: Tuple[float, float]
     max_consecutive_not_found: int
@@ -40,7 +41,7 @@ class WorkerSettings:
         outreach = settings["outreach"]
         return cls(
             opener_id=outreach["opener"],
-            daily_quota=int(outreach["daily_quota"]),
+            quota=QuotaRule.from_config(outreach),
             window=parse_window(outreach["outreach_hours"]),
             delay_range=tuple(outreach["delay_between_shops_sec"]),
             max_consecutive_not_found=int(outreach["max_consecutive_not_found"]),
@@ -66,6 +67,7 @@ class Worker:
         self.device_id, self.allowed = device_id, allowed_phones
         self.log, self.on_error, self.now, self.sleep, self.delay = log, on_error, now, sleep, delay
         self.replies = replies  # a ReplyWatcher: checked between shops and while waiting
+        self._quota_logged: Optional[Tuple[Any, int]] = None
 
     # ---- one shop ----
 
@@ -126,6 +128,13 @@ class Worker:
         if self.replies is not None:
             self.replies.tick()
 
+    def quota_today(self, now: datetime) -> int:
+        plan = today_plan(self.conn, self.cfg.quota, self.allowed, self.device_id, now)
+        if self._quota_logged != (now.date(), plan.quota):
+            self._quota_logged = (now.date(), plan.quota)
+            self.log(describe_plan(plan, self.cfg.quota))
+        return plan.quota
+
     def _wait_until(self, moment: datetime, why: str) -> None:
         self.log(f"{why} — รอถึง {moment:%d/%m %H:%M}" + (" (ระหว่างนี้คอยดูคำตอบของร้าน)" if self.replies else ""))
         while True:
@@ -159,11 +168,12 @@ class Worker:
                 self._wait_until(next_window_start(now, self.cfg.window), "นอกเวลาทักร้าน")
                 continue
             used = db.searches_since(self.conn, self.device_id, start_of_day(now))
-            if used >= self.cfg.daily_quota:
+            quota = self.quota_today(now)
+            if used >= quota:
                 if once:
-                    return f"ครบโควตาวันนี้แล้ว ({used}/{self.cfg.daily_quota})"
+                    return f"ครบโควตาวันนี้แล้ว ({used}/{quota})"
                 self._wait_until(next_window_start(start_of_day(now) + timedelta(days=1), self.cfg.window),
-                                 f"ครบโควตาวันนี้แล้ว ({used}/{self.cfg.daily_quota})")
+                                 f"ครบโควตาวันนี้แล้ว ({used}/{quota})")
                 continue
 
             item = db.next_in_queue(self.conn, self.allowed)

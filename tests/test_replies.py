@@ -11,6 +11,7 @@ psycopg = pytest.importorskip("psycopg")
 from bot import db  # noqa: E402
 from bot.classifier import ReplyClassifier  # noqa: E402
 from bot.line_app import LineApp  # noqa: E402
+from bot.quota import QuotaRule  # noqa: E402
 from bot.replies import ReplyEvent, ReplyHandler, ReplyWatcher  # noqa: E402
 from bot.schedule import parse_window  # noqa: E402
 from bot.templates import load_messages  # noqa: E402
@@ -177,7 +178,7 @@ def test_worker_checks_replies_before_contacting_shops(conn):
     messaged_shop(conn, 0, "0800000000")
     _, watcher, device, _, _ = setup(conn, auto_reply=False)
     device.shell_output = (DATA / "line_notifications.txt").read_text(encoding="utf-8")
-    config = WorkerSettings(opener_id="Q2", daily_quota=5, window=parse_window(["14:00", "16:30"]),
+    config = WorkerSettings(opener_id="Q2", quota=QuotaRule(fixed=5), window=parse_window(["14:00", "16:30"]),
                             delay_range=(0, 0), max_consecutive_not_found=5, not_found_pause_minutes=60)
     worker = Worker(conn, watcher.app, config, load_messages(), BUSINESS, "phone-1", {"safety": {"test_mode": True}},
                     {"0800000000"}, log=lambda m: None, now=lambda: NOW, sleep=lambda s: None, replies=watcher)

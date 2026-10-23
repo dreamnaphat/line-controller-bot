@@ -1,5 +1,6 @@
 """Worker against a throwaway PostgreSQL (TEST_DATABASE_URL) and the fake LINE app from tests/fakes.py."""
 
+import dataclasses
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -9,6 +10,7 @@ psycopg = pytest.importorskip("psycopg")
 
 from bot import db  # noqa: E402
 from bot.line_app import LineApp  # noqa: E402
+from bot.quota import QuotaRule  # noqa: E402
 from bot.schedule import parse_window  # noqa: E402
 from bot.worker import Worker, WorkerSettings  # noqa: E402
 from tests.fakes import PACKAGE, line_world  # noqa: E402
@@ -21,7 +23,7 @@ IN_WINDOW = datetime(2026, 10, 21, 14, 30, tzinfo=BKK)
 TEAM = "0966841124"
 MESSAGES = {"Q2": "สวัสดีครับ {shop} เปิดขายอยู่ไหมครับ 🙏"}
 TEST_MODE = {"safety": {"test_mode": True}}
-CONFIG = WorkerSettings(opener_id="Q2", daily_quota=2, window=parse_window(["14:00", "16:30"]),
+CONFIG = WorkerSettings(opener_id="Q2", quota=QuotaRule(fixed=2), window=parse_window(["14:00", "16:30"]),
                         delay_range=(0, 0), max_consecutive_not_found=5, not_found_pause_minutes=60,
                         search_timeout=0.05)
 
@@ -138,7 +140,23 @@ def test_quota_counts_searches_including_not_found(conn):
     assert worker.run(once=True).endswith("NOT_FOUND")
     assert worker.run(once=True).endswith("NOT_FOUND")
     assert db.searches_since(conn, "phone-1", IN_WINDOW.replace(hour=0, minute=0)) == 2
-    assert "ครบโควตา" in worker.run(once=True)  # daily_quota is 2 in CONFIG
+    assert "ครบโควตา" in worker.run(once=True)  # the quota is 2 in CONFIG
+
+
+def test_auto_quota_spreads_the_batch_over_the_month(conn):
+    phones = [f"08{n:08d}" for n in range(1, 7)]
+    for phone in phones:
+        queue(conn, phone)
+    # Imported 27 days ago: 6 shops left with 3 days to go → 2 a day.
+    conn.execute("UPDATE line_bot.outreach SET imported_at = %s", (IN_WINDOW - timedelta(days=27),))
+    config = dataclasses.replace(CONFIG, quota=QuotaRule(fixed=None, finish_days=30, cap=25))
+    worker, _, _, logs = make_worker(conn, "missing", allowed=set(phones), config=config)
+
+    assert worker.run(once=True).endswith("NOT_FOUND")
+    assert worker.run(once=True).endswith("NOT_FOUND")
+    assert worker.run(once=True) == "ครบโควตาวันนี้แล้ว (2/2)"
+    assert [line for line in logs if line.startswith("โควตาวันนี้")] == [
+        "โควตาวันนี้ 2 ร้าน (คิวเหลือ 6 ร้าน ÷ เหลือ 3 วันในรอบ 30 วัน)"]
 
 
 def test_outside_hours_does_nothing(conn):

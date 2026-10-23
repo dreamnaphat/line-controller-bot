@@ -241,7 +241,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         watcher = _reply_watcher(conn, app, d, settings, messages, allowed, log)
         worker = Worker(conn, app, config, messages, business, device_id, settings, allowed, log=log,
                         on_error=lambda item: dump_screen(d, f"worker-{item.code}", LOG_DIR), replies=watcher)
-        log(f"เริ่มทำงาน: มือถือ {device_id}, โควตา {config.daily_quota} ร้าน/วัน"
+        log(f"เริ่มทำงาน: มือถือ {device_id}, {config.quota.describe()}"
             + (f", โหมดทดสอบ ({len(allowed)} เบอร์)" if allowed is not None else ", ทักร้านจริง")
             + (", ตอบกลับอัตโนมัติ" if auto_reply else ", ไม่ตอบอัตโนมัติ (แจ้งพนักงานอย่างเดียว)"))
         try:
@@ -254,19 +254,24 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    from . import db
+    from datetime import datetime
 
-    labels = {"PENDING": "รอทัก", "ADDED": "เพิ่มเพื่อนแล้ว รอส่งข้อความ", "MESSAGED": "ส่งข้อความแล้ว",
-              "NOT_FOUND": "ค้นไม่เจอใน LINE", "INVALID": "เบอร์ใช้ไม่ได้", "ERROR": "ทำไม่สำเร็จ ต้องให้คนดู",
-              "REPLIED": "ร้านตอบแล้ว", "PITCHED": "บอทตอบกลับแล้ว", "DECLINED": "ปฏิเสธ", "CLOSED": "ปิดกิจการ",
-              "NO_REPLY": "ไม่ตอบ", "INTERESTED": "สนใจ", "CUSTOMER": "เป็นลูกค้า"}
+    from . import db
+    from .quota import QuotaRule, describe_plan, today_plan
+    from .reports import STATUS_LABELS
+
+    settings = load_settings()
+    allowed = test_phones() if test_mode(settings) else None
+    rule = QuotaRule.from_config(settings["outreach"])
     with db.connect(database_url()) as conn:
         summary = db.queue_summary(conn)
+        plan = today_plan(conn, rule, allowed, device_serial(), datetime.now().astimezone())
     if not summary:
         print("คิวว่าง")
         return 0
     for status, count in sorted(summary.items(), key=lambda item: -item[1]):
-        print(f"  {labels.get(status, status)} ({status}): {count}")
+        print(f"  {STATUS_LABELS.get(status, status)} ({status}): {count}")
+    print(describe_plan(plan, rule) + (" [โหมดทดสอบ: นับเฉพาะเบอร์ใน TEST_PHONES]" if allowed is not None else ""))
     return 0
 
 
@@ -339,6 +344,32 @@ def cmd_replies(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    import socket
+    import subprocess
+
+    from .config import ROOT, dashboard_password
+
+    database_url()  # fail early with the usual message if .env is missing
+    address = "127.0.0.1"
+    if args.lan:
+        if not dashboard_password():
+            print("เปิดให้เครื่องอื่นเข้าได้ต้องตั้ง DASHBOARD_PASSWORD ในไฟล์ .env ก่อน")
+            return 1
+        address = "0.0.0.0"
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))  # no packet is sent; this only picks the LAN address
+                print(f"เครื่องอื่นในวง Wi-Fi เดียวกันเปิดได้ที่ http://{s.getsockname()[0]}:{args.port}")
+        except OSError:
+            print("เครื่องอื่นในวง Wi-Fi เดียวกันเปิดได้ที่ http://<IP ของเครื่องนี้>:" + str(args.port))
+    print(f"เปิด dashboard ที่ http://localhost:{args.port} (กด Ctrl+C เพื่อปิด)")
+    command = [sys.executable, "-m", "streamlit", "run", str(ROOT / "dashboard" / "app.py"),
+               "--server.address", address, "--server.port", str(args.port),
+               "--browser.gatherUsageStats", "false", "--client.toolbarMode", "minimal"]
+    return subprocess.call(command, cwd=ROOT)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m bot", description="บอททักร้านทาง LINE")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -371,6 +402,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("status", help="ดูจำนวนร้านในคิวแยกตามสถานะ").set_defaults(func=cmd_status)
     sub.add_parser("replies", help="ดูร้านที่ตอบแล้วและรอพนักงานคุยต่อ").set_defaults(func=cmd_replies)
     sub.add_parser("check-replies", help="ตรวจคำตอบของร้านตอนนี้เลย 1 รอบ").set_defaults(func=cmd_check_replies)
+
+    p = sub.add_parser("dashboard", help="เปิดหน้า dashboard สำหรับพนักงานในเบราว์เซอร์")
+    p.add_argument("--port", type=int, default=8501)
+    p.add_argument("--lan", action="store_true", help="ให้เครื่องอื่นในวง Wi-Fi เปิดได้ (ต้องตั้ง DASHBOARD_PASSWORD)")
+    p.set_defaults(func=cmd_dashboard)
 
     p = sub.add_parser("poc", help="ทดลองกับเบอร์ทดสอบ 1 เบอร์: ค้นหา → เพิ่มเพื่อน → พิมพ์ข้อความแรก")
     p.add_argument("--phone", required=True, help="เบอร์ทดสอบ (ใช้เบอร์ของทีมเท่านั้น)")

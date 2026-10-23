@@ -52,3 +52,9 @@ def telegram() -> Tuple[Optional[str], Optional[str]]:
     _load_env()
     return (os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() or None,
             os.environ.get("TELEGRAM_CHAT_ID", "").strip() or None)
+
+
+def dashboard_password() -> Optional[str]:
+    """DASHBOARD_PASSWORD from .env: required before the dashboard is opened to other computers."""
+    _load_env()
+    return os.environ.get("DASHBOARD_PASSWORD", "").strip() or None
