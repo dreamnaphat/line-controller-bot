@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS line_bot.outreach (
     scan_id          TEXT,                          -- "Shop"."lastScanId" ตอนนำเข้า
     phone_raw        TEXT,                          -- เบอร์ตามที่อยู่ใน "Shop"."phoneNumber"
     phone            TEXT         UNIQUE,           -- normalize แล้ว เช่น 0812345678 (NULL ถ้าใช้ไม่ได้)
-    invalid_reason   TEXT,                          -- no_phone | landline | bad_format | duplicate
+    invalid_reason   TEXT,                          -- no_phone | landline | bad_format | duplicate (INVALID); visited | status:<ค่า> | removed (SKIPPED)
     status           TEXT         NOT NULL DEFAULT 'PENDING',
     shop_state       TEXT,                          -- OPEN | NOT_OPEN_YET | CLOSED | UNKNOWN
     reply_group      TEXT,                          -- กลุ่มคำตอบแรกของร้าน (config/reply_rules.yaml)
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS line_bot.outreach (
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT outreach_status_chk CHECK (status IN (
         'PENDING', 'INVALID', 'NOT_FOUND', 'ADDED', 'MESSAGED', 'REPLIED', 'PITCHED',
-        'INTERESTED', 'DECLINED', 'CLOSED', 'NO_REPLY', 'CUSTOMER', 'ERROR')),
+        'INTERESTED', 'DECLINED', 'CLOSED', 'NO_REPLY', 'CUSTOMER', 'ERROR', 'SKIPPED')),
     CONSTRAINT outreach_shop_state_chk CHECK (
         shop_state IS NULL OR shop_state IN ('OPEN', 'NOT_OPEN_YET', 'CLOSED', 'UNKNOWN'))
 );
@@ -50,6 +50,12 @@ CREATE TABLE IF NOT EXISTS line_bot.outreach (
 ALTER TABLE line_bot.outreach ADD COLUMN IF NOT EXISTS searched_at TIMESTAMPTZ;
 ALTER TABLE line_bot.outreach ADD COLUMN IF NOT EXISTS line_chat_id TEXT;    -- รหัสห้องแชทของ LINE (จากการแจ้งเตือน)
 ALTER TABLE line_bot.outreach ADD COLUMN IF NOT EXISTS pending_reply TEXT;   -- ข้อความที่บอทต้องตอบ เช่น B1 (รอส่ง)
+
+-- SKIPPED = ไม่ทักแล้วเพราะ "Shop" เปลี่ยนหลังเข้าคิว (เซลส์ไปเยี่ยมแล้ว / เปลี่ยนสถานะ) เหตุผลอยู่ใน invalid_reason
+ALTER TABLE line_bot.outreach DROP CONSTRAINT IF EXISTS outreach_status_chk;
+ALTER TABLE line_bot.outreach ADD CONSTRAINT outreach_status_chk CHECK (status IN (
+    'PENDING', 'INVALID', 'NOT_FOUND', 'ADDED', 'MESSAGED', 'REPLIED', 'PITCHED',
+    'INTERESTED', 'DECLINED', 'CLOSED', 'NO_REPLY', 'CUSTOMER', 'ERROR', 'SKIPPED'));
 
 -- คิวงาน: ร้าน PENDING ที่เปิดใหม่ล่าสุดก่อน
 CREATE INDEX IF NOT EXISTS outreach_queue_idx ON line_bot.outreach (status, age_days, id);

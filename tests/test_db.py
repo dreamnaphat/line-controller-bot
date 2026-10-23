@@ -12,40 +12,10 @@ psycopg = pytest.importorskip("psycopg")
 
 from bot import db  # noqa: E402
 from bot.importer import plan_import  # noqa: E402
+from tests.shop_table import SHOP_DDL, add_shop  # noqa: E402
 
 TEST_URL = os.environ.get("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not TEST_URL, reason="TEST_DATABASE_URL not set")
-
-# Same definition as the production "Shop" table.
-SHOP_DDL = """
-CREATE TABLE "Shop" (
-    "placeId" text PRIMARY KEY,
-    "name" text NOT NULL,
-    "estimatedOpeningDate" text,
-    "calculatedAgeDays" integer,
-    "analysisReason" text NOT NULL,
-    "rating" double precision,
-    "userRatingCount" integer NOT NULL,
-    "phoneNumber" text,
-    "latitude" double precision,
-    "longitude" double precision,
-    "googleMapsUrl" text NOT NULL,
-    "province" text NOT NULL,
-    "district" text NOT NULL,
-    "foodType" text NOT NULL,
-    "firstFoundAt" timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    "lastSeenAt" timestamp NOT NULL,
-    "lastScanId" text NOT NULL,
-    "status" text DEFAULT 'none' NOT NULL,
-    "statusChangedAt" timestamp,
-    "visited" boolean DEFAULT false NOT NULL,
-    "visitedAt" timestamp,
-    "visitNote" text,
-    "saleId" integer,
-    "saleName" text,
-    "foundOnPage" integer
-)
-"""
 
 IMPORT_CFG = {"shop_status": ["none"], "skip_visited": True, "food_types": [], "max_age_days": None}
 
@@ -61,16 +31,6 @@ def conn():
         c.rollback()
         c.execute('DROP SCHEMA IF EXISTS line_bot CASCADE; DROP TABLE IF EXISTS "Shop"')
         c.commit()
-
-
-def add_shop(conn, place_id, phone, age=None, status="none", visited=False, food="ก๋วยเตี๋ยว"):
-    conn.execute(
-        'INSERT INTO "Shop" ("placeId", "name", "calculatedAgeDays", "analysisReason", "userRatingCount",'
-        ' "phoneNumber", "googleMapsUrl", "province", "district", "foodType", "lastSeenAt", "lastScanId",'
-        ' "status", "visited")'
-        " VALUES (%s, %s, %s, 'new', 3, %s, 'https://maps.google.com', 'กรุงเทพ', 'บางนา', %s, now(), 'scan-1', %s, %s)",
-        (place_id, f"ร้าน {place_id}", age, phone, food, status, visited),
-    )
 
 
 def test_schema_is_idempotent(conn):
@@ -146,3 +106,15 @@ def test_test_shop_cannot_reuse_a_real_shop_phone(conn):
     db.insert_outreach(conn, plan_import(db.fetch_new_shops(conn, IMPORT_CFG), set()))
     with pytest.raises(psycopg.errors.UniqueViolation):
         db.add_test_shop(conn, "0811111111", "ร้านทดสอบ")
+
+
+def test_auto_reconnect_survives_a_dropped_connection():
+    conn = db.AutoReconnect(TEST_URL)
+    with psycopg.connect(TEST_URL, autocommit=True) as admin:
+        pid = conn.execute("SELECT pg_backend_pid()").fetchone()[0]
+        admin.execute("SELECT pg_terminate_backend(%s)", (pid,))  # what Neon does when it suspends
+    assert conn.execute("SELECT 1").fetchone()[0] == 1
+    assert conn.execute("SELECT pg_backend_pid()").fetchone()[0] != pid
+    with pytest.raises(psycopg.errors.UndefinedTable):
+        conn.execute("SELECT * FROM no_such_table")  # real errors are not retried
+    conn.close()

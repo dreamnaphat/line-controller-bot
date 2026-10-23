@@ -7,7 +7,7 @@ import streamlit as st
 
 from bot import db, reports
 from bot.config import load_settings, test_phones
-from bot.quota import QuotaRule, today_plan
+from bot.quota import QuotaRule, describe_plan, today_plan
 from bot.reports import SHOP_STATE_LABELS, STAFF_OUTCOMES, STATUS_LABELS
 from bot.safety import test_mode
 from dashboard.common import BADGE_KIND, connection, fmt, html, phone_text, rim
@@ -130,13 +130,7 @@ def overview_tab(shops, plan, rule, allowed) -> None:
     cols[3].metric("สนใจ", by_status.get("INTERESTED", 0) + by_status.get("CUSTOMER", 0), border=True)
     cols[4].metric("เป็นลูกค้า", by_status.get("CUSTOMER", 0), border=True)
 
-    if rule.fixed is None:
-        quota_text = (f"บอททักวันละ {plan.quota} ร้าน ให้ร้านที่เหลือ {plan.total} ร้านหมดใน {plan.days_left} วัน "
-                      f"(รอบละ {rule.finish_days} วัน)")
-        if plan.capped:
-            quota_text += f" — ติดเพดาน {rule.cap} ร้าน/วัน จะใช้ราว {plan.days_to_finish} วัน"
-    else:
-        quota_text = f"บอททักวันละ {plan.quota} ร้าน ร้านที่เหลือ {plan.total} ร้านใช้ราว {plan.days_to_finish} วัน"
+    quota_text = describe_plan(plan, rule)
     if allowed is not None:
         quota_text += " · โหมดทดสอบ: นับเฉพาะเบอร์ใน TEST_PHONES"
     st.caption(quota_text)
@@ -210,7 +204,7 @@ def render() -> None:
 
     shops = reports.load_shops(conn, include_test)
     rule = QuotaRule.from_config(settings["outreach"])
-    plan = today_plan(conn, rule, allowed, None, datetime.now().astimezone())
+    plan = today_plan(conn, rule, allowed, datetime.now().astimezone())
     waiting = sum(1 for s in shops if s["needs_human"])
     due = sum(1 for s in reports.recontacts(shops) if s["recontact_on"] <= date.today())
     header(waiting, due, plan)

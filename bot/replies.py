@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, Optional, Set, Tuple
 
 from . import db
@@ -84,7 +84,12 @@ class ReplyHandler:
 
 
 class ReplyWatcher:
-    """Phone side: read notifications, scan the chat list now and then, and send the bot's pending replies."""
+    """Phone side: read notifications, scan the chat list now and then, and send the bot's pending replies.
+
+    Notifications stay on the phone until someone opens the chat, so the same ones are read every round.
+    What was already handled is remembered here, so a quiet round touches only the phone, never the database,
+    and Neon can suspend while nothing happens.
+    """
 
     def __init__(self, handler: ReplyHandler, app: LineApp, device, messages: Dict[str, str],
                  business: Dict[str, Any], allowed_phones: Optional[Set[str]], reply_window: Tuple[Any, Any],
@@ -95,29 +100,50 @@ class ReplyWatcher:
         self.window, self.scan_every = reply_window, scan_every_minutes * 60
         self.log, self.now, self.no_reply_days = log, now, no_reply_days
         self.last_scan: Optional[datetime] = None
+        self.handled_notices: Set[str] = set()                 # message ids already handled
+        self.scanned_rows: Dict[int, Tuple[str, int]] = {}     # outreach id -> (preview, unread) last handled
+        self.no_reply_checked: Optional[date] = None
+        self.pending_check = True  # replies left from an earlier run, or recorded outside reply hours
 
     def poll_notifications(self) -> int:
         """Read LINE notifications (no screen work). Chats without one of our codes are skipped unread."""
         dump = self.d.shell("dumpsys notification --noredact").output
-        handled = 0
+        handled, on_screen = 0, set()
         for notice in parse_line_notifications(dump):
             outreach_id = outreach_id_from_title(notice.title)
             if outreach_id is None:
                 continue
+            key = notice.message_id or f"{notice.title}\n{notice.text}"
+            on_screen.add(key)
+            if key in self.handled_notices:
+                continue
             event = ReplyEvent(outreach_id, notice.title, notice.text, "notification", notice.message_id,
                                notice.chat_id)
-            handled += self.handler.handle(event) is not None
+            handled += self._handle(event)
+            self.handled_notices.add(key)
+        self.handled_notices &= on_screen  # forget notifications that are gone
         return handled
+
+    def _handle(self, event: ReplyEvent) -> bool:
+        if self.handler.handle(event) is None:
+            return False
+        if self.handler.auto_reply:
+            self.pending_check = True
+        return True
 
     def scan_chat_list(self) -> int:
         """Open the Chats tab and record chats with unread messages that notifications missed."""
         self.last_scan = self.now()
         self.app.go_home()
         self.app.open_chat_tab()
-        handled = 0
+        handled, unread = 0, {}
         for row in parse_chat_list(self.d.dump_hierarchy()):
-            if row.unread > 0:
-                handled += self.handler.handle(ReplyEvent(row.outreach_id, row.title, row.preview, "chat_scan")) is not None
+            if row.unread <= 0:
+                continue
+            unread[row.outreach_id] = (row.preview, row.unread)
+            if self.scanned_rows.get(row.outreach_id) != unread[row.outreach_id]:
+                handled += self._handle(ReplyEvent(row.outreach_id, row.title, row.preview, "chat_scan"))
+        self.scanned_rows = unread
         return handled
 
     def send_pending(self) -> int:
@@ -148,15 +174,19 @@ class ReplyWatcher:
         """One round: read notifications; during reply hours also send pending replies and scan when due."""
         self.poll_notifications()
         now = self.now()
-        expired = db.mark_no_reply(self.handler.conn, now - timedelta(days=self.no_reply_days))
-        if expired:
-            self.log(f"ร้านที่ไม่ตอบเกิน {self.no_reply_days} วัน: {expired} ร้าน → NO_REPLY")
+        if self.no_reply_checked != now.date():  # once a day is plenty for a 7-day limit
+            self.no_reply_checked = now.date()
+            expired = db.mark_no_reply(self.handler.conn, now - timedelta(days=self.no_reply_days))
+            if expired:
+                self.log(f"ร้านที่ไม่ตอบเกิน {self.no_reply_days} วัน: {expired} ร้าน → NO_REPLY")
         if not within(now, self.window):
             return
-        used_screen = self.send_pending() > 0
+        used_screen = False
         if self.last_scan is None or (now - self.last_scan).total_seconds() >= self.scan_every:
             self.scan_chat_list()
-            self.send_pending()  # answer anything the scan found
             used_screen = True
+        if self.pending_check:
+            self.pending_check = False
+            used_screen = self.send_pending() > 0 or used_screen
         if used_screen:
             self.app.leave()  # LINE in the background so new messages show up as notifications

@@ -1,19 +1,35 @@
 """Read and update outreach data for the staff dashboard (no Streamlit here, so it can be tested)."""
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import psycopg
 
 from . import db
+from .importer import OutreachRow, plan_import
 
 STATUS_LABELS = {
     "PENDING": "รอทัก", "ADDED": "เพิ่มเพื่อนแล้ว รอส่งข้อความ", "MESSAGED": "ส่งข้อความแล้ว",
     "NOT_FOUND": "ค้นไม่เจอใน LINE", "INVALID": "เบอร์ใช้ไม่ได้", "ERROR": "ทำไม่สำเร็จ ต้องให้คนดู",
     "REPLIED": "ร้านตอบแล้ว", "PITCHED": "บอทตอบกลับแล้ว", "DECLINED": "ไม่สนใจ", "CLOSED": "ปิดกิจการ",
-    "NO_REPLY": "ไม่ตอบ", "INTERESTED": "สนใจ", "CUSTOMER": "เป็นลูกค้า",
+    "NO_REPLY": "ไม่ตอบ", "INTERESTED": "สนใจ", "CUSTOMER": "เป็นลูกค้า", "SKIPPED": "ข้าม (เซลส์จัดการแล้ว)",
 }
+
+PHONE_PROBLEMS = {"no_phone": "ไม่มีเบอร์", "landline": "เบอร์บ้าน/สำนักงาน (ค้นใน LINE ไม่ได้)",
+                  "bad_format": "เบอร์ผิดรูปแบบ", "duplicate": "เบอร์ซ้ำกับร้านอื่น"}
+
+
+def skip_label(reason: Optional[str]) -> str:
+    """Why a queued shop was skipped (status SKIPPED), in words."""
+    if reason == "visited":
+        return "เซลส์ไปเยี่ยมร้านแล้ว"
+    if reason == "removed":
+        return "ไม่มีร้านนี้ในตาราง Shop แล้ว"
+    if reason and reason.startswith("status:"):
+        return f"สถานะใน Shop เปลี่ยนเป็น {reason.split(':', 1)[1]}"
+    return reason or "-"
+
 
 SHOP_STATE_LABELS = {"OPEN": "เปิดแล้ว", "NOT_OPEN_YET": "ยังไม่เปิด", "CLOSED": "ปิดกิจการ", "UNKNOWN": "ไม่แน่ใจ"}
 
@@ -38,7 +54,7 @@ STAFF_OUTCOMES = {
 _SHOP_COLUMNS = ("id", "code", "shop_name", "phone", "status", "shop_state", "reply_group", "line_name",
                  "needs_human", "do_not_contact", "notes", "recontact_on", "imported_at", "searched_at",
                  "added_at", "messaged_at", "first_reply_at", "last_reply_at", "last_reply_text", "last_error",
-                 "invalid_reason", "place_id")
+                 "invalid_reason", "place_id", "age_days")
 
 
 def load_shops(conn: psycopg.Connection, include_test: bool) -> List[Dict[str, Any]]:
@@ -117,3 +133,53 @@ def save_staff_update(conn: psycopg.Connection, outreach_id: int, outcome: str, 
     if answered:
         fields["needs_human"] = False
     db.update_outreach(conn, outreach_id, **fields)
+
+
+# ---- the bot page: where each shop of a batch is ----
+
+QUEUED = ("PENDING", "ADDED")
+NOT_CONTACTED = ("NOT_FOUND", "INVALID", "ERROR", "SKIPPED")
+
+
+def queued(shops: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Shops still to contact, in the order the bot takes them (see db._QUEUE_ORDER)."""
+    waiting = [s for s in shops if s["status"] in QUEUED and s["phone"] and not s["do_not_contact"]]
+    return sorted(waiting, key=lambda s: (s["status"] != "ADDED", batch_of(s),
+                                          s["age_days"] if s["age_days"] is not None else 10 ** 6, s["id"]))
+
+
+def contacted(shops: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return sorted((s for s in shops if s["messaged_at"]), key=lambda s: s["messaged_at"], reverse=True)
+
+
+def not_contacted(shops: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [s for s in shops if s["status"] in NOT_CONTACTED]
+
+
+def why_not_contacted(shop: Dict[str, Any]) -> str:
+    if shop["status"] == "INVALID":
+        return PHONE_PROBLEMS.get(shop["invalid_reason"], shop["invalid_reason"] or "-")
+    if shop["status"] == "SKIPPED":
+        return skip_label(shop["invalid_reason"])
+    if shop["status"] == "ERROR":
+        return f"ทำไม่สำเร็จ 3 ครั้ง: {shop['last_error'] or '-'}"
+    return STATUS_LABELS.get(shop["status"], shop["status"])
+
+
+def expected_days(count: int, quota: int, used_today: int, today: date, today_open: bool) -> List[date]:
+    """Rough day each queued shop gets contacted, from today's quota (the quota is recalculated every day)."""
+    left_today = max(0, quota - used_today) if today_open else 0
+    days = []
+    for position in range(count):
+        if position < left_today:
+            days.append(today)
+        else:
+            days.append(today + timedelta(days=1 + (position - left_today) // max(quota, 1)))
+    return days
+
+
+def not_yet_queued(conn: psycopg.Connection, import_cfg: Dict[str, Any]) -> Optional[List[OutreachRow]]:
+    """New shops in "Shop" that the next import would look at (None when the "Shop" table is not there)."""
+    if conn.execute("SELECT to_regclass('public.\"Shop\"')").fetchone()[0] is None:
+        return None
+    return plan_import(db.fetch_new_shops(conn, import_cfg), db.fetch_existing_phones(conn))

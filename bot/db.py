@@ -1,6 +1,7 @@
 """Database access for Neon (PostgreSQL) via psycopg 3."""
 
 import time
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Collection, Dict, Iterable, List, Optional, Set, Tuple
@@ -9,7 +10,7 @@ from urllib.parse import urlparse
 import psycopg
 
 from .config import ROOT
-from .importer import OutreachRow, ShopRow
+from .importer import OutreachRow, ShopRow, plan_import, rows_to_store, summarize
 
 SCHEMA_FILE = ROOT / "db" / "schema.sql"
 
@@ -42,6 +43,50 @@ def connect(url: str, attempts: int = 3, autocommit: bool = False) -> psycopg.Co
                 raise
             time.sleep(2 * attempt)
     raise AssertionError("unreachable")
+
+
+class AutoReconnect:
+    """An autocommit connection that reopens itself after Neon dropped it.
+
+    Neon suspends its compute after 5 minutes without queries and closes open connections, so a bot that waits
+    for hours between jobs finds its connection gone. A statement that fails that way is retried once.
+    """
+
+    def __init__(self, url: str, attempts: int = 3):
+        self.url, self.attempts = url, attempts
+        self._conn = connect(url, attempts, autocommit=True)
+
+    def _lost(self) -> bool:
+        return self._conn.closed or self._conn.broken
+
+    def _reopen(self) -> None:
+        self._conn.close()
+        self._conn = connect(self.url, self.attempts, autocommit=True)
+
+    def execute(self, query, params=None, **kwargs):
+        if self._lost():
+            self._reopen()
+        try:
+            return self._conn.execute(query, params, **kwargs)
+        except psycopg.OperationalError:
+            if not self._lost():
+                raise  # the server answered with an error; the connection itself is fine
+            self._reopen()
+            return self._conn.execute(query, params, **kwargs)
+
+    def cursor(self, *args, **kwargs):
+        if self._lost():
+            self._reopen()
+        return self._conn.cursor(*args, **kwargs)
+
+    def __getattr__(self, name: str):
+        return getattr(self._conn, name)
+
+    def __enter__(self) -> "AutoReconnect":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._conn.close()
 
 
 def describe(url: str) -> str:
@@ -88,6 +133,32 @@ def insert_outreach(conn: psycopg.Connection, rows: Iterable[OutreachRow]) -> in
     return count_outreach(conn) - before
 
 
+def import_new_shops(conn: psycopg.Connection, import_cfg: Dict[str, Any]) -> Counter:
+    """Queue every new shop from "Shop" (the bot's daily import) and count what was found, as summarize() does."""
+    rows = plan_import(fetch_new_shops(conn, import_cfg), fetch_existing_phones(conn))
+    insert_outreach(conn, rows_to_store(rows))
+    return summarize(rows)
+
+
+def shop_skip_reason(conn: psycopg.Connection, place_id: str, import_cfg: Dict[str, Any]) -> Optional[str]:
+    """Why a queued shop must not be contacted any more because "Shop" changed after it was queued, or None.
+
+    Sales may visit a shop or change its status during the month the bot spreads a batch over.
+    """
+    if place_id.startswith(TEST_PREFIX):
+        return None
+    row = conn.execute('SELECT "status", "visited" FROM public."Shop" WHERE "placeId" = %s', (place_id,)).fetchone()
+    if row is None:
+        return "removed"
+    status, visited = row
+    statuses = import_cfg.get("shop_status") or None
+    if statuses and status not in statuses:
+        return f"status:{status}"
+    if import_cfg.get("skip_visited", True) and visited:
+        return "visited"
+    return None
+
+
 TEST_PREFIX = "TEST-"
 
 # Re-adding a test shop resets it to a fresh PENDING row so the same team number can be tested again.
@@ -127,6 +198,7 @@ class QueueItem:
     phone: str
     status: str      # PENDING, or ADDED when a previous run stopped before the message went out
     attempts: int
+    place_id: str
 
 
 # Shops the worker still has to contact.
@@ -135,17 +207,20 @@ WHERE status IN ('PENDING', 'ADDED') AND phone IS NOT NULL AND NOT do_not_contac
   AND (%(only)s::text[] IS NULL OR phone = ANY(%(only)s::text[]))
 """
 
-# Unfinished shops (ADDED) first, then the newest shops.
+# Unfinished shops (ADDED) first, then older monthly batches (earlier deadline), then the newest shops.
+_QUEUE_ORDER = "(status = 'ADDED') DESC, date_trunc('month', imported_at), age_days ASC NULLS LAST, id"
+
 _NEXT_SQL = f"""
-SELECT id, code, shop_name, phone, status, attempts FROM line_bot.outreach
+SELECT id, code, shop_name, phone, status, attempts, place_id FROM line_bot.outreach
 {_QUEUE_WHERE}
-ORDER BY (status = 'ADDED') DESC, age_days ASC NULLS LAST, id
+ORDER BY {_QUEUE_ORDER}
 LIMIT 1
 """
 
 _UPDATABLE = {"status", "searched_at", "added_at", "messaged_at", "line_name", "opener_variant", "device_id",
               "last_error", "attempts", "shop_state", "reply_group", "needs_human", "do_not_contact", "first_reply_at",
-              "last_reply_at", "last_reply_text", "pitched_at", "line_chat_id", "pending_reply", "notes", "recontact_on"}
+              "last_reply_at", "last_reply_text", "pitched_at", "line_chat_id", "pending_reply", "notes", "recontact_on",
+              "invalid_reason"}
 
 
 def next_in_queue(conn: psycopg.Connection, only_phones: Optional[Collection[str]]) -> Optional[QueueItem]:
@@ -154,13 +229,14 @@ def next_in_queue(conn: psycopg.Connection, only_phones: Optional[Collection[str
     return QueueItem(*row) if row else None
 
 
-def queue_left(conn: psycopg.Connection, only_phones: Optional[Collection[str]],
-               since: datetime) -> Tuple[int, Optional[datetime]]:
-    """(shops in the queue not searched since `since`, when the oldest queued shop was imported)."""
-    return conn.execute(
-        f"SELECT count(*) FILTER (WHERE searched_at IS NULL OR searched_at < %(since)s), min(imported_at)"
-        f" FROM line_bot.outreach {_QUEUE_WHERE}",
-        {"only": sorted(only_phones) if only_phones is not None else None, "since": since}).fetchone()
+def quota_basis(conn: psycopg.Connection, only_phones: Optional[Collection[str]], since: datetime) -> List[datetime]:
+    """Import time of every shop left at `since`: still queued, or searched since then."""
+    return [row[0] for row in conn.execute(
+        "SELECT imported_at FROM line_bot.outreach"
+        " WHERE (%(only)s::text[] IS NULL OR phone = ANY(%(only)s::text[]))"
+        "   AND ((status IN ('PENDING', 'ADDED') AND phone IS NOT NULL AND NOT do_not_contact)"
+        "        OR searched_at >= %(since)s)",
+        {"only": sorted(only_phones) if only_phones is not None else None, "since": since})]
 
 
 def update_outreach(conn: psycopg.Connection, outreach_id: int, **fields: Any) -> None:

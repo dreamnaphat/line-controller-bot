@@ -1,20 +1,18 @@
-"""What the dashboard's control page does: phone connection, team numbers, test shops, and running the bot."""
+"""What the dashboard's control pages do: start and stop the bot, phone connection, team numbers, test shops."""
 
 import os
+import signal
 import subprocess
 import sys
 from datetime import datetime
-from pathlib import Path
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import psycopg
 
 from . import db
 from .config import ROOT, set_env_values, test_phones
-from .device import LOG_DIR
 from .phone import normalize_phone
-
-BOT_LOG = LOG_DIR / "bot-ui.log"
+from .status import CONSOLE_LOG, mark_stopped
 
 
 def bot_command(*args: str) -> List[str]:
@@ -36,41 +34,30 @@ def run_command(*args: str, timeout: float = 600) -> Tuple[int, str]:
     return result.returncode, (result.stdout + result.stderr).strip()
 
 
-class BotRunner:
-    """The long-running `python -m bot run` started from the dashboard; only one at a time."""
+def start_bot(*args: str, command: Optional[List[str]] = None) -> subprocess.Popen:
+    """Start `python -m bot run` on its own, so it keeps running when the dashboard is closed or restarted.
 
-    def __init__(self, command: Callable[..., List[str]] = bot_command, log_path: Path = BOT_LOG):
-        self.command, self.log_path = command, log_path
-        self.process: Optional[subprocess.Popen] = None
-        self.started_at: Optional[datetime] = None
+    The dashboard follows it through logs/bot-status.json; its console output goes to logs/bot-console.log.
+    """
+    CONSOLE_LOG.parent.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        detach = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
+    else:
+        detach = {"start_new_session": True}
+    with open(CONSOLE_LOG, "a", encoding="utf-8") as console:
+        console.write(f"\n--- {datetime.now():%Y-%m-%d %H:%M:%S} เริ่มบอทจากหน้าเว็บ ---\n")
+        console.flush()
+        return subprocess.Popen(command or bot_command("run", *args), cwd=ROOT, env=_child_env(),
+                                stdin=subprocess.DEVNULL, stdout=console, stderr=subprocess.STDOUT, **detach)
 
-    def running(self) -> bool:
-        return self.process is not None and self.process.poll() is None
 
-    def start(self, *args: str) -> None:
-        if self.running():
-            raise RuntimeError("บอททำงานอยู่แล้ว")
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.log_path, "w", encoding="utf-8") as log:
-            self.process = subprocess.Popen(self.command(*args), cwd=ROOT, env=_child_env(), stdout=log,
-                                            stderr=subprocess.STDOUT)
-        self.started_at = datetime.now()
-
-    def stop(self) -> None:
-        if not self.running():
-            return
-        self.process.terminate()  # every step is already saved in the database, so stopping mid-shop is safe
-        try:
-            self.process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-        with open(self.log_path, "a", encoding="utf-8") as log:
-            log.write(f"{datetime.now():%Y-%m-%d %H:%M:%S}  หยุดบอทจากหน้า dashboard\n")
-
-    def log_tail(self, lines: int = 60) -> str:
-        if not self.log_path.exists():
-            return ""
-        return "\n".join(self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
+def force_stop(pid: int) -> None:
+    """Kill a bot that does not answer the stop request (on Windows this is TerminateProcess)."""
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass  # already gone
+    mark_stopped("บังคับหยุดจากหน้าเว็บ")
 
 
 # ---- phone ----

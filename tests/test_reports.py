@@ -11,6 +11,14 @@ from bot import db, reports  # noqa: E402
 from bot.config import ROOT  # noqa: E402
 
 TEST_URL = os.environ.get("TEST_DATABASE_URL")
+# The tracking page with the toast that app.py shows after a save.
+TRACKING_PAGE = """
+import streamlit as st
+from dashboard import tracking
+if "flash" in st.session_state:
+    st.toast(st.session_state.pop("flash"))
+tracking.render()
+"""
 pytestmark = pytest.mark.skipif(not TEST_URL, reason="TEST_DATABASE_URL not set")
 
 BKK = timezone(timedelta(hours=7))
@@ -109,7 +117,14 @@ def test_dashboard_page_records_staff_outcome(conn, monkeypatch):
     outreach_id = replied_shop(conn)
     add(conn, "queued", "0800000009")
 
-    page = testing.AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=30).run()
+    # The whole app opens (on the bot page) ...
+    from dashboard import bot_page
+    monkeypatch.setattr(bot_page, "adb_devices", lambda: [])
+    app = testing.AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=30).run()
+    assert not app.exception
+
+    # ... and the tracking page records what staff found out.
+    page = testing.AppTest.from_string(TRACKING_PAGE, default_timeout=30).run()
     assert not page.exception
     assert [tab.label.split(" ", 1)[1] for tab in page.tabs] == ["รอพนักงาน (1)", "นัดทักใหม่ (0)", "ภาพรวม",
                                                                  "ร้านทั้งหมด"]

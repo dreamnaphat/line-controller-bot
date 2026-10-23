@@ -192,7 +192,7 @@ def _worker_log():
 
 def cmd_run(args: argparse.Namespace) -> int:
     from . import db
-    from .device import LOG_DIR, connect, device_errors, dump_screen
+    from .device import LOG_DIR, PhoneConnectionError, connect, device_errors, dump_screen
     from .line_app import LineApp
     from .worker import Worker, WorkerSettings
 
@@ -220,25 +220,51 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"เปิด auto_pitch ไว้ แต่{problem} (ใส่ค่าใน config/settings.yaml หัวข้อ business หรือปิด auto_pitch)")
             return 1
 
+    from .status import StatusBoard, clear_stop_request, read_status, running, stop_requested
+
+    current = read_status()
+    if running(current):
+        print(f"บอทอีกตัวกำลังทำงานอยู่ (เริ่มเมื่อ {current['started_at'][:16].replace('T', ' ')}) — หยุดตัวเดิมก่อน")
+        return 1
+    clear_stop_request()
     log = _worker_log()
-    d = connect(device_serial())
-    device_id = device_serial() or d.serial
-    app = LineApp(d, load_yaml("selectors.yaml"), settings["device"]["line_package"])
-    with db.connect(database_url(), autocommit=True) as conn:
-        if not db.schema_exists(conn):
-            print("ยังไม่มีตารางของบอท — รัน python -m bot init-db ก่อน")
-            return 1
-        watcher = _reply_watcher(conn, app, d, settings, messages, allowed, log)
-        worker = Worker(conn, app, config, messages, business, device_id, settings, allowed, log=log,
-                        on_error=lambda item: dump_screen(d, f"worker-{item.code}", LOG_DIR), replies=watcher)
-        log(f"เริ่มทำงาน: มือถือ {device_id}, {config.quota.describe()}"
-            + (f", โหมดทดสอบ ({len(allowed)} เบอร์)" if allowed is not None else ", ทักร้านจริง")
-            + (", ตอบกลับอัตโนมัติ" if auto_reply else ", ไม่ตอบอัตโนมัติ (แจ้งพนักงานอย่างเดียว)"))
-        try:
+    board = StatusBoard(mode="ทดสอบ" if allowed is not None else "ทักร้านจริง", once=args.once,
+                        quota_rule=config.quota.describe(), outreach_hours=settings["outreach"]["outreach_hours"],
+                        ignore_hours=args.now, auto_reply=auto_reply)
+    reason = "หยุดกะทันหัน"
+    try:
+        d = connect(device_serial())
+        device_id = device_serial() or d.serial
+        board.update(device=device_id)
+        app = LineApp(d, load_yaml("selectors.yaml"), settings["device"]["line_package"])
+        with db.AutoReconnect(database_url()) as conn:
+            db.apply_schema(conn)  # creates or updates the bot's tables; safe to run every start
+            watcher = _reply_watcher(conn, app, d, settings, messages, allowed, log)
+            worker = Worker(conn, app, config, messages, business, device_id, settings, allowed, log=log,
+                            on_error=lambda item: dump_screen(d, f"worker-{item.code}", LOG_DIR), replies=watcher,
+                            status=board, should_stop=stop_requested)
+            log(f"เริ่มทำงาน: มือถือ {device_id}, {config.quota.describe()}"
+                + (f", โหมดทดสอบ ({len(allowed)} เบอร์)" if allowed is not None else ", ทักร้านจริง")
+                + (", ตอบกลับอัตโนมัติ" if auto_reply else ", ไม่ตอบอัตโนมัติ (แจ้งพนักงานอย่างเดียว)"))
             reason = worker.run(once=args.once, ignore_hours=args.now, max_shops=args.max)
-        except device_errors() as exc:
-            log(f"หยุด: มือถือมีปัญหา ({exc}) — รัน python -m bot doctor เพื่อตรวจ")
-            return 1
+    except PhoneConnectionError as exc:
+        reason = "ต่อมือถือไม่ได้"
+        log(f"หยุด: {exc}")
+        return 1
+    except device_errors() as exc:
+        reason = f"มือถือมีปัญหา ({exc})"
+        log(f"หยุด: {reason} — กดตรวจการเชื่อมต่อในหน้าเว็บ หรือรัน python -m bot doctor")
+        return 1
+    except KeyboardInterrupt:
+        reason = "หยุดด้วย Ctrl+C"
+        raise
+    except Exception as exc:  # a crash: the dashboard must not keep showing a live bot
+        reason = f"หยุดเพราะเกิดข้อผิดพลาด: {exc}"
+        log(reason)
+        raise
+    finally:
+        board.stopped(reason)
+        clear_stop_request()
     log(f"หยุด: {reason}")
     return 0
 
@@ -255,7 +281,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     rule = QuotaRule.from_config(settings["outreach"])
     with db.connect(database_url()) as conn:
         summary = db.queue_summary(conn)
-        plan = today_plan(conn, rule, allowed, device_serial(), datetime.now().astimezone())
+        plan = today_plan(conn, rule, allowed, datetime.now().astimezone())
     if not summary:
         print("คิวว่าง")
         return 0
@@ -298,12 +324,17 @@ def cmd_check_replies(args: argparse.Namespace) -> int:
     from .device import connect, device_errors
     from .line_app import LineApp
 
+    from .status import read_status, running
+
+    if running(read_status()):
+        print("บอทกำลังทำงานอยู่และตรวจคำตอบเองอยู่แล้ว — ไม่ต้องสั่งซ้ำ (มือถือใช้ได้ทีละงาน)")
+        return 1
     settings = load_settings()
     allowed = test_phones() if test_mode(settings) else None
     log = _worker_log()
     d = connect(device_serial())
     app = LineApp(d, load_yaml("selectors.yaml"), settings["device"]["line_package"])
-    with db.connect(database_url(), autocommit=True) as conn:
+    with db.AutoReconnect(database_url()) as conn:
         watcher = _reply_watcher(conn, app, d, settings, load_messages(), allowed, log)
         try:
             found = watcher.poll_notifications()

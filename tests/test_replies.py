@@ -16,6 +16,7 @@ from bot.replies import ReplyEvent, ReplyHandler, ReplyWatcher  # noqa: E402
 from bot.schedule import parse_window  # noqa: E402
 from bot.templates import load_messages  # noqa: E402
 from tests.fakes import PACKAGE, line_world, show_chat_in_list  # noqa: E402
+from tests.shop_table import add_shop, create_shop_table  # noqa: E402
 
 TEST_URL = os.environ.get("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not TEST_URL, reason="TEST_DATABASE_URL not set")
@@ -30,9 +31,10 @@ BUSINESS = {"factory_name": "ทดสอบ", "persona_name": "ต้น", "sou
 def conn():
     with psycopg.connect(TEST_URL, autocommit=True) as c:
         c.execute("DROP SCHEMA IF EXISTS line_bot CASCADE")
+        create_shop_table(c)
         db.apply_schema(c)
         yield c
-        c.execute("DROP SCHEMA IF EXISTS line_bot CASCADE")
+        c.execute('DROP SCHEMA IF EXISTS line_bot CASCADE; DROP TABLE IF EXISTS "Shop"')
 
 
 def messaged_shop(conn, outreach_id, phone, name="ร้านทดสอบ"):
@@ -163,6 +165,49 @@ def test_scan_chat_list_records_unread_chats(conn):
     assert shop(conn, 12)[0] == "MESSAGED"
 
 
+class QueryCounter:
+    """Wraps a connection and counts the statements sent through it."""
+
+    def __init__(self, conn):
+        self.conn, self.count = conn, 0
+
+    def execute(self, *args, **kwargs):
+        self.count += 1
+        return self.conn.execute(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
+
+
+def test_quiet_rounds_never_touch_the_database(conn):
+    """Neon suspends after 5 idle minutes; rounds that find nothing new must not wake it."""
+    messaged_shop(conn, 0, "0800000000")
+    counter = QueryCounter(conn)
+    handler, watcher, device, _, _ = setup(counter, auto_reply=False)
+    device.shell_output = (DATA / "line_notifications.txt").read_text(encoding="utf-8")
+    device.hierarchy = (DATA / "chat_list.xml").read_text(encoding="utf-8")
+
+    watcher.tick()  # first round: records the replies, sends nothing pending, marks old shops once
+    assert shop(conn, 0)[0] == "REPLIED"
+    first = counter.count
+    assert first > 0
+
+    watcher.tick()  # same notifications and the same unread chat as before
+    watcher.last_scan = None
+    watcher.tick()  # a chat-list scan that finds the same unread row
+    assert counter.count == first
+
+
+def test_a_new_message_in_the_same_chat_is_still_recorded(conn):
+    messaged_shop(conn, 0, "0800000000")
+    _, watcher, device, _, _ = setup(conn, auto_reply=False)
+    device.shell_output = (DATA / "line_notifications.txt").read_text(encoding="utf-8")
+    watcher.poll_notifications()
+    device.shell_output = device.shell_output.replace("637404326209519999", "999").replace("ดรีมกินข้าวยัง", "พรุ่งนี้ว่าง")
+    assert watcher.poll_notifications() == 1
+    assert shop(conn, 0)[6] == "พรุ่งนี้ว่าง"
+
+
 def test_tick_outside_reply_hours_only_reads_notifications(conn):
     messaged_shop(conn, 0, "0800000000")
     _, watcher, device, _, _ = setup(conn, auto_reply=False, window=("08:00", "09:00"))
@@ -177,6 +222,7 @@ def test_worker_reads_replies_only_after_the_outreach_session(conn):
 
     messaged_shop(conn, 0, "0800000000")  # its reply is waiting in the notification shade
     for phone in ("0811111111", "0822222222"):
+        add_shop(conn, f"p-{phone}", phone)
         conn.execute("INSERT INTO line_bot.outreach (place_id, shop_name, phone) VALUES (%s, 'ร้านใหม่', %s)",
                      (f"p-{phone}", phone))
     _, watcher, device, _, _ = setup(conn, auto_reply=False)

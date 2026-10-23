@@ -3,11 +3,13 @@
 import os
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from bot import config
-from bot.control import BotRunner, add_team_phone, remove_team_phone
+from bot import config, control
+from bot.control import add_team_phone, remove_team_phone
+from bot.status import StatusBoard, mark_stopped, read_status, running, tail
 
 TEST_URL = os.environ.get("TEST_DATABASE_URL")
 needs_db = pytest.mark.skipif(not TEST_URL, reason="TEST_DATABASE_URL not set")
@@ -42,38 +44,60 @@ def test_team_phones_are_normalized_and_kept_sorted(env_file):
     assert config.test_phones() == {"0966841124"}
 
 
-def test_bot_runner_logs_and_stops(tmp_path):
-    script = "import time\nprint('เริ่มแล้ว', flush=True)\ntime.sleep(60)"
-    bot = BotRunner(command=lambda *args: [sys.executable, "-c", script], log_path=tmp_path / "bot.log")
-    bot.start("run")
-    with pytest.raises(RuntimeError):
-        bot.start("run")
-    for _ in range(50):
-        if "เริ่มแล้ว" in bot.log_tail():
-            break
-        time.sleep(0.1)
-    assert bot.running() and "เริ่มแล้ว" in bot.log_tail()
-    bot.stop()
-    assert not bot.running()
-    assert bot.log_tail().endswith("หยุดบอทจากหน้า dashboard")
+def test_status_board_tells_the_dashboard_whether_the_bot_is_alive(tmp_path):
+    clock = {"now": datetime(2026, 10, 23, 14, 0, tzinfo=timezone.utc)}
+    path = tmp_path / "bot-status.json"
+    board = StatusBoard(path, now=lambda: clock["now"], mode="ทดสอบ")
+    board.update(state="waiting", activity="ครบโควตาวันนี้แล้ว (5/5)", until=clock["now"] + timedelta(hours=24))
+    status = read_status(path)
+    assert (status["state"], status["mode"], status["pid"]) == ("waiting", "ทดสอบ", os.getpid())
+    assert running(status, clock["now"] + timedelta(minutes=1))
+    assert not running(status, clock["now"] + timedelta(minutes=10))  # heartbeat went stale: the bot died
+    board.stopped("หยุดตามคำสั่งจากหน้าเว็บ")
+    assert not running(read_status(path), clock["now"])
+    assert read_status(tmp_path / "missing.json") is None
+
+
+def test_mark_stopped_and_tail(tmp_path):
+    path = tmp_path / "bot-status.json"
+    StatusBoard(path)
+    mark_stopped("บังคับหยุดจากหน้าเว็บ", path)
+    assert read_status(path)["activity"] == "บังคับหยุดจากหน้าเว็บ"
+    log = tmp_path / "worker.log"
+    log.write_text("\n".join(f"บรรทัด {n}" for n in range(500)), encoding="utf-8")
+    assert tail(log, 3) == "บรรทัด 497\nบรรทัด 498\nบรรทัด 499"
+    assert tail(tmp_path / "none.log") == ""
+
+
+def test_start_bot_runs_on_its_own(tmp_path, monkeypatch):
+    monkeypatch.setattr(control, "CONSOLE_LOG", tmp_path / "console.log")
+    process = control.start_bot(command=[sys.executable, "-c", "import time\nprint('เริ่มแล้ว', flush=True)\ntime.sleep(60)"])
+    try:
+        for _ in range(50):
+            if "เริ่มแล้ว" in (tmp_path / "console.log").read_text(encoding="utf-8"):
+                break
+            time.sleep(0.1)
+        assert process.poll() is None
+        assert "เริ่มบอทจากหน้าเว็บ" in (tmp_path / "console.log").read_text(encoding="utf-8")
+    finally:
+        process.kill()
+        process.wait()
 
 
 @needs_db
-def test_control_page_adds_team_phone_and_test_shop(env_file, monkeypatch):
+def test_test_page_adds_team_phone_and_test_shop(env_file, monkeypatch):
     psycopg = pytest.importorskip("psycopg")
     testing = pytest.importorskip("streamlit.testing.v1")
     from bot import db
-    from dashboard import control_page
 
     monkeypatch.setenv("DATABASE_URL", TEST_URL)
     monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
-    monkeypatch.setattr(control_page, "adb_devices", lambda: [("192.168.1.109:39195", "device")])
     with psycopg.connect(TEST_URL, autocommit=True) as conn:
         conn.execute("DROP SCHEMA IF EXISTS line_bot CASCADE")
         db.apply_schema(conn)
         try:
             page = testing.AppTest.from_string(
-                "from dashboard import control_page\ncontrol_page.render()", default_timeout=30).run()
+                "from dashboard import test_page\ntest_page.render()", default_timeout=30).run()
             assert not page.exception
             assert "1 เบอร์" in page.markdown[0].value
 
