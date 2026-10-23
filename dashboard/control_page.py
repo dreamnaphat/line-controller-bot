@@ -53,7 +53,7 @@ def bot_section(bot: BotRunner, testing: bool, team, window) -> None:
 
     if bot.running():
         html(f'<p class="facts"><span class="badge good">บอทกำลังทำงาน</span> เริ่มเมื่อ {bot.started_at:%H:%M} '
-             "· บอทจะทักร้านตามคิวและคอยดูคำตอบไปเรื่อย ๆ</p>")
+             "· ทักร้านตามคิวในช่วงเวลาทักร้าน แล้วตรวจคำตอบตอนว่างจนกว่าจะกดหยุด</p>")
         if st.button("หยุดบอท", type="primary", icon=":material/stop_circle:"):
             bot.stop()
             flash("หยุดบอทแล้ว")
@@ -69,7 +69,7 @@ def bot_section(bot: BotRunner, testing: bool, team, window) -> None:
         _run_short("กำลังตรวจคำตอบ", "check-replies")
     ignore_hours = st.checkbox(f"ไม่สนช่วงเวลาทักร้าน (ปกติทักเฉพาะ {window[0]}–{window[1]})", value=testing)
     if start.button("เริ่มทำงานต่อเนื่อง", type="primary", icon=":material/play_arrow:", disabled=not allowed,
-                    width="stretch", help="ทักร้านตามคิวและโควตา และคอยดูคำตอบจนกว่าจะกดหยุด"):
+                    width="stretch", help="ทักร้านตามคิวและโควตา แล้วตรวจคำตอบตอนที่ไม่ได้ทักร้าน จนกว่าจะกดหยุด"):
         bot.start("run", *(["--now"] if ignore_hours else []))
         flash("เริ่มบอทแล้ว")
 

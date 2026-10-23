@@ -137,6 +137,7 @@ class Worker:
 
     def _wait_until(self, moment: datetime, why: str) -> None:
         self.log(f"{why} — รอถึง {moment:%d/%m %H:%M}" + (" (ระหว่างนี้คอยดูคำตอบของร้าน)" if self.replies else ""))
+        self._check_replies()  # the outreach session just ended (or never started): catch up on replies first
         while True:
             remaining = (moment - self.now()).total_seconds()
             if remaining <= 0:
@@ -149,12 +150,14 @@ class Worker:
 
         Outside working hours, over the daily quota or while the phone is paused, the loop waits;
         with `once` it returns the reason instead of waiting.
+
+        Replies are checked only while waiting, never between shops: notifications stay on the phone until
+        read, so the session runs without interruption and the replies are handled right after it.
         """
         db.touch_device(self.conn, self.device_id)
         done = not_found_streak = failure_streak = 0
         idle_logged = False
         while True:
-            self._check_replies()
             now = self.now()
             paused_until = db.device_paused_until(self.conn, self.device_id)
             if paused_until is not None and paused_until > now:
@@ -184,6 +187,7 @@ class Worker:
                 if not idle_logged:
                     self.log(f"{empty} — คอยดูคำตอบของร้านต่อ (กด Ctrl+C เพื่อหยุด)")
                     idle_logged = True
+                self._check_replies()
                 self.sleep(30)
                 continue
             idle_logged = False

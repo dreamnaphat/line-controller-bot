@@ -172,18 +172,67 @@ def test_tick_outside_reply_hours_only_reads_notifications(conn):
     assert device.log == []  # no screen work
 
 
-def test_worker_checks_replies_before_contacting_shops(conn):
+def test_worker_reads_replies_only_after_the_outreach_session(conn):
+    from bot.worker import Worker, WorkerSettings
+
+    messaged_shop(conn, 0, "0800000000")  # its reply is waiting in the notification shade
+    for phone in ("0811111111", "0822222222"):
+        conn.execute("INSERT INTO line_bot.outreach (place_id, shop_name, phone) VALUES (%s, 'ร้านใหม่', %s)",
+                     (f"p-{phone}", phone))
+    _, watcher, device, _, _ = setup(conn, auto_reply=False)
+    device.shell_output = (DATA / "line_notifications.txt").read_text(encoding="utf-8")
+    contacted_at_first_check = []
+    real_tick = watcher.tick
+
+    def tick():
+        if not contacted_at_first_check:
+            contacted_at_first_check.append(conn.execute(
+                "SELECT count(*) FROM line_bot.outreach WHERE id > 0 AND status = 'MESSAGED'").fetchone()[0])
+        real_tick()
+
+    watcher.tick = tick
+    clock = {"now": NOW.replace(hour=14, minute=0)}
+
+    class Enough(Exception):
+        pass
+
+    def sleep(seconds):
+        clock["now"] += timedelta(seconds=seconds)
+        if clock["now"] > NOW.replace(hour=14, minute=30):
+            raise Enough
+
+    config = WorkerSettings(opener_id="Q2", quota=QuotaRule(fixed=5), window=parse_window(["14:00", "16:30"]),
+                            delay_range=(60, 60), max_consecutive_not_found=5, not_found_pause_minutes=60,
+                            search_timeout=0.05)
+    worker = Worker(conn, watcher.app, config, load_messages(), BUSINESS, "phone-1", {"safety": {"test_mode": True}},
+                    {"0800000000", "0811111111", "0822222222"}, log=lambda m: None, now=lambda: clock["now"],
+                    sleep=sleep, delay=lambda a, b: a, replies=watcher)
+    with pytest.raises(Enough):
+        worker.run()
+
+    assert contacted_at_first_check == [2]  # both new shops were contacted before any reply check
+    assert shop(conn, 0)[0] == "REPLIED"
+
+
+def test_worker_outside_the_session_checks_replies_while_waiting(conn):
     from bot.worker import Worker, WorkerSettings
 
     messaged_shop(conn, 0, "0800000000")
     _, watcher, device, _, _ = setup(conn, auto_reply=False)
     device.shell_output = (DATA / "line_notifications.txt").read_text(encoding="utf-8")
+
+    class Enough(Exception):
+        pass
+
+    def sleep(seconds):
+        raise Enough
+
     config = WorkerSettings(opener_id="Q2", quota=QuotaRule(fixed=5), window=parse_window(["14:00", "16:30"]),
                             delay_range=(0, 0), max_consecutive_not_found=5, not_found_pause_minutes=60)
     worker = Worker(conn, watcher.app, config, load_messages(), BUSINESS, "phone-1", {"safety": {"test_mode": True}},
-                    {"0800000000"}, log=lambda m: None, now=lambda: NOW, sleep=lambda s: None, replies=watcher)
-
-    assert worker.run(once=True) == "อยู่นอกเวลาทักร้าน"
+                    {"0800000000"}, log=lambda m: None, now=lambda: NOW, sleep=sleep, replies=watcher)
+    with pytest.raises(Enough):
+        worker.run()  # 18:30: outside outreach hours, so it waits for tomorrow and reads replies first
     assert shop(conn, 0)[0] == "REPLIED"
 
 
