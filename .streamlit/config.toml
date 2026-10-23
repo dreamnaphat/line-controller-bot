@@ -1,0 +1,45 @@
+# Look of the staff dashboard (python -m bot dashboard runs Streamlit from the project folder).
+# Colours come from the rooster bowl (ชามตราไก่): porcelain white, rooster red, banana-leaf green.
+
+[server]
+enableStaticServing = true      # serves dashboard/static (the Mitr font files) so the font works offline too
+
+[theme]
+base = "light"
+font = "Mitr, sans-serif"
+headingFont = "Mitr, sans-serif"
+baseFontWeight = 300
+headingFontWeights = [600, 500, 500, 500, 500, 500]
+primaryColor = "#2F7A3F"
+backgroundColor = "#FCFCFA"
+secondaryBackgroundColor = "#F1F3EE"
+textColor = "#1F1A17"
+redColor = "#C8322B"
+greenColor = "#2F7A3F"
+borderColor = "#E3E5DE"
+showWidgetBorder = true
+baseRadius = "0.6rem"
+chartCategoricalColors = ["#2F7A3F", "#9CC59A", "#C8322B"]
+
+[theme.sidebar]
+backgroundColor = "#F1F3EE"
+
+[[theme.fontFaces]]
+family = "Mitr"
+url = "app/static/fonts/Mitr-Light.ttf"
+weight = "300"
+
+[[theme.fontFaces]]
+family = "Mitr"
+url = "app/static/fonts/Mitr-Regular.ttf"
+weight = "400"
+
+[[theme.fontFaces]]
+family = "Mitr"
+url = "app/static/fonts/Mitr-Medium.ttf"
+weight = "500"
+
+[[theme.fontFaces]]
+family = "Mitr"
+url = "app/static/fonts/Mitr-SemiBold.ttf"
+weight = "600"

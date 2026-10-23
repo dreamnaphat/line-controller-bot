@@ -111,8 +111,9 @@ def test_dashboard_page_records_staff_outcome(conn, monkeypatch):
 
     page = testing.AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=30).run()
     assert not page.exception
-    assert [tab.label for tab in page.tabs] == ["💬 รอพนักงาน (1)", "📅 นัดทักใหม่ (0)", "📊 ภาพรวม", "🔎 ร้านทั้งหมด"]
-    assert "C1 ร้าน p1" in page.expander[0].label
+    assert [tab.label.split(" ", 1)[1] for tab in page.tabs] == ["รอพนักงาน (1)", "นัดทักใหม่ (0)", "ภาพรวม",
+                                                                 "ร้านทั้งหมด"]
+    assert any("ร้าน p1" in m.value and "เปิดแล้ว" in m.value for m in page.markdown)
 
     page.radio[0].set_value("interested")
     page.text_area[0].input("ขอใบราคา")
@@ -121,5 +122,5 @@ def test_dashboard_page_records_staff_outcome(conn, monkeypatch):
     status, needs_human, notes = conn.execute(
         "SELECT status, needs_human, notes FROM line_bot.outreach WHERE id = %s", (outreach_id,)).fetchone()
     assert (status, needs_human, notes) == ("INTERESTED", False, "ขอใบราคา")
-    assert page.tabs[0].label == "💬 รอพนักงาน (0)"
-    assert any("บันทึก C1" in s.value for s in page.success)
+    assert page.tabs[0].label.endswith("รอพนักงาน (0)")
+    assert any("บันทึกผล C1" in t.value for t in page.toast)
