@@ -120,8 +120,8 @@ def test_unfinished_shop_is_resumed_first_and_not_sent_twice(conn):
     queue(conn, TEAM, place="newer")
     resumed_id, _ = queue(conn, "0899999999", status="ADDED", place="resumed")
     worker, device, selectors, logs = make_worker(conn, "friend", allowed={TEAM, "0899999999"})
-    snippet = "สวัสดีครับ ร้านก๋วยเตี๋ยวเรือป้าแดง เปิดขายอยู่ไหมครับ 🙏"[:20]
-    device.screens["chat"].append({"textContains": snippet})  # the opener is already in the chat
+    opener = "สวัสดีครับ ร้านก๋วยเตี๋ยวเรือป้าแดง เปิดขายอยู่ไหมครับ 🙏"
+    device.screens["chat"].append({"text": opener})  # the opener is already in the chat
 
     worker.run(once=True)
 
@@ -166,3 +166,13 @@ def test_continuous_run_waits_for_the_window_then_works(conn):
     assert row(conn, outreach_id)[0] == "MESSAGED"
     assert any("นอกเวลาทักร้าน" in line for line in logs)
     assert clock["now"] >= IN_WINDOW.replace(hour=14, minute=0)
+
+
+def test_new_shop_is_sent_even_if_the_chat_has_a_similar_older_message(conn):
+    """A chat can already hold an earlier test opener; only resumed (ADDED) shops check for it."""
+    outreach_id, _ = queue(conn, TEAM)
+    worker, device, selectors, logs = make_worker(conn, "friend")
+    device.screens["chat"].append({"text": "สวัสดีครับ ร้านก๋วยเตี๋ยวเรือป้าแดง เปิดขายอยู่ไหมครับ 🙏"})
+    worker.run(once=True)
+    assert len(device.sent_messages(selectors["chat_input"][0])) == 1
+    assert not any("ไม่ส่งซ้ำ" in line for line in logs)

@@ -163,8 +163,8 @@ class LineApp:
         The chat box is emptied first so a leftover draft is not mistaken for a sent message.
         """
         self._require("chat_input", 10.0).set_text("")
-        snippet = text.splitlines()[0][:20]
-        return bool(self.d(textContains=snippet).exists)
+        # The whole message must match: openers share their first words ("สวัสดีครับ ร้าน...").
+        return bool(self.d(text=text).exists)
 
     def send_message(self, text: str, send: bool = True, timeout: float = 5.0) -> bool:
         """Type `text` into the chat box; when `send` is True, tap send and confirm the box was cleared."""

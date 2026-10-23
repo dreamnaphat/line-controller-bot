@@ -102,15 +102,16 @@ class Worker:
 
             self.app.open_chat()
             self.app.rename_friend(friend_label(item.code, item.shop_name, self.cfg.label_max_len))
-            if self.app.already_sent(text):
-                self.log(f"{item.code}: ข้อความเคยส่งไปแล้วจากรอบก่อน ไม่ส่งซ้ำ")
+            # Only a shop left half-done (ADDED) by an earlier run can already have the message.
+            if item.status == "ADDED" and self.app.already_sent(text):
+                self.log(f"{item.code} {item.shop_name}: ข้อความเคยส่งไปแล้วจากรอบก่อน ไม่ส่งซ้ำ")
             elif not self.app.send_message(text):
                 raise LineUIError("กดส่งแล้วแต่ยืนยันไม่ได้ว่าข้อความออกไป")
             else:
                 db.record_outgoing(self.conn, item.id, text)
+                self.log(f"{item.code} {item.shop_name}: ส่งข้อความแล้ว")
             db.update_outreach(self.conn, item.id, status="MESSAGED", messaged_at=self.now(),
                                opener_variant=self.cfg.opener_id, device_id=self.device_id)
-            self.log(f"{item.code} {item.shop_name}: ส่งข้อความแล้ว")
             return Outcome.MESSAGED
         except LineUIError as exc:
             self.on_error(item)
