@@ -162,8 +162,9 @@ line-controller-bot/
 │   ├── chat_list.py     # อ่านหน้ารายการแชท
 │   ├── replies.py       # บันทึกคำตอบ, ตอบกลับ 1 ครั้ง
 │   ├── alerts.py        # แจ้งเตือน Telegram
-│   └── reports.py       # ข้อมูลสำหรับ dashboard และการบันทึกผลของพนักงาน
-├── dashboard/app.py     # หน้า dashboard (Streamlit)
+│   ├── reports.py       # ข้อมูลสำหรับ dashboard และการบันทึกผลของพนักงาน
+│   └── control.py       # หน้าควบคุม: เชื่อมต่อมือถือ, เบอร์ทีมใน .env, ร้านทดสอบ, สั่งบอททำงาน
+├── dashboard/           # Streamlit: app.py (เมนู), tracking.py (ติดตามร้าน), control_page.py (ควบคุมการทดสอบ)
 ├── config/              # settings, messages, reply_rules, selectors
 ├── db/schema.sql
 ├── docs/                # PLAN, MESSAGES, SETUP

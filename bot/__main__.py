@@ -151,26 +151,16 @@ def cmd_poc(args: argparse.Namespace) -> int:
 
 
 def cmd_test_add(args: argparse.Namespace) -> int:
-    import psycopg
-
     from . import db
+    from .control import add_test_shop
 
-    phone = normalize_phone(args.phone)
-    if phone.phone is None:
-        print(f"เบอร์ {args.phone!r} ใช้ค้นใน LINE ไม่ได้ ({phone.reason})")
-        return 1
-    if phone.phone not in test_phones():
-        print(f"เพิ่มได้เฉพาะเบอร์ทีมที่อยู่ใน TEST_PHONES ในไฟล์ .env ({phone.phone} ไม่อยู่ในรายการ)")
-        return 1
-    url = database_url()
-    with db.connect(url) as conn:
+    with db.connect(database_url()) as conn:
         try:
-            code = db.add_test_shop(conn, phone.phone, args.name)
-        except psycopg.errors.UniqueViolation:
-            conn.rollback()
-            print(f"เบอร์ {phone.phone} ซ้ำกับร้านจริงที่อยู่ในคิวแล้ว ใช้เบอร์ทีมเบอร์อื่นแทน")
+            code = add_test_shop(conn, args.phone, args.name, test_phones())
+        except ValueError as exc:
+            print(exc)
             return 1
-    print(f"เพิ่มร้านทดสอบ {code} \"{args.name}\" เบอร์ {phone.phone} เข้าคิวแล้ว (สถานะ PENDING)")
+    print(f"เพิ่มร้านทดสอบ {code} \"{args.name}\" เบอร์ {normalize_phone(args.phone).phone} เข้าคิวแล้ว (สถานะ PENDING)")
     return 0
 
 

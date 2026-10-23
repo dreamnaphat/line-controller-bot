@@ -1,6 +1,7 @@
 """Load YAML config files and secrets from .env."""
 
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
@@ -8,6 +9,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = ROOT / "config"
+ENV_FILE = ROOT / ".env"
 
 
 def load_yaml(name: str) -> Dict[str, Any]:
@@ -22,7 +24,7 @@ def load_settings() -> Dict[str, Any]:
 def _load_env() -> None:
     from dotenv import load_dotenv
 
-    load_dotenv(ROOT / ".env")
+    load_dotenv(ENV_FILE)
 
 
 def database_url() -> str:
@@ -58,3 +60,19 @@ def dashboard_password() -> Optional[str]:
     """DASHBOARD_PASSWORD from .env: required before the dashboard is opened to other computers."""
     _load_env()
     return os.environ.get("DASHBOARD_PASSWORD", "").strip() or None
+
+
+def set_env_values(values: Dict[str, str]) -> None:
+    """Write KEY=value lines into .env, keeping comments and other keys, and use the new values right away."""
+    lines = ENV_FILE.read_text(encoding="utf-8").splitlines() if ENV_FILE.exists() else []
+    for key, value in values.items():
+        line = f"{key}={value}"
+        pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
+        for i, existing in enumerate(lines):
+            if pattern.match(existing):
+                lines[i] = line
+                break
+        else:
+            lines.append(line)
+    ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.environ.update(values)  # load_dotenv never overrides values already in the environment
