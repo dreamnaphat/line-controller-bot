@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS line_bot.outreach (
 
 -- คอลัมน์ที่เพิ่มทีหลัง (สำหรับฐานข้อมูลที่สร้างตารางไว้ก่อนแล้ว)
 ALTER TABLE line_bot.outreach ADD COLUMN IF NOT EXISTS searched_at TIMESTAMPTZ;
+ALTER TABLE line_bot.outreach ADD COLUMN IF NOT EXISTS line_chat_id TEXT;    -- รหัสห้องแชทของ LINE (จากการแจ้งเตือน)
+ALTER TABLE line_bot.outreach ADD COLUMN IF NOT EXISTS pending_reply TEXT;   -- ข้อความที่บอทต้องตอบ เช่น B1 (รอส่ง)
 
 -- คิวงาน: ร้าน PENDING ที่เปิดใหม่ล่าสุดก่อน
 CREATE INDEX IF NOT EXISTS outreach_queue_idx ON line_bot.outreach (status, age_days, id);
@@ -64,6 +66,8 @@ CREATE TABLE IF NOT EXISTS line_bot.messages (
 );
 
 CREATE INDEX IF NOT EXISTS messages_outreach_idx ON line_bot.messages (outreach_id, created_at);
+ALTER TABLE line_bot.messages ADD COLUMN IF NOT EXISTS line_message_id TEXT;  -- กันบันทึกข้อความเดียวกันซ้ำ
+CREATE UNIQUE INDEX IF NOT EXISTS messages_line_message_id_idx ON line_bot.messages (line_message_id);
 
 -- มือถือ/บัญชี LINE ที่บอทใช้
 CREATE TABLE IF NOT EXISTS line_bot.devices (

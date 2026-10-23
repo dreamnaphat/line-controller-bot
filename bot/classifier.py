@@ -58,6 +58,13 @@ class ReplyClassifier:
     def from_config(cls) -> "ReplyClassifier":
         return cls(load_yaml("reply_rules.yaml"))
 
+    def status_after(self, reply_id: str) -> str:
+        """Status a shop gets once the bot has sent `reply_id` (e.g. B1 -> PITCHED, B5 -> DECLINED)."""
+        for rule in [*self._groups, self._default]:
+            if rule.reply == reply_id:
+                return rule.status
+        raise KeyError(reply_id)
+
     def classify(self, text: Optional[str]) -> Classification:
         normalized = normalize_reply(text)
         rule = next((g for g in self._groups if any(p.search(normalized) for p in g.patterns)), self._default)

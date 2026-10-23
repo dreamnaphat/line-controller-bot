@@ -3,7 +3,7 @@
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Collection, Dict, Iterable, List, Optional, Set
+from typing import Any, Collection, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 import psycopg
@@ -98,7 +98,7 @@ ON CONFLICT (place_id) DO UPDATE SET
     shop_name = EXCLUDED.shop_name, status = 'PENDING', shop_state = NULL, reply_group = NULL,
     opener_variant = NULL, line_name = NULL, needs_human = false, do_not_contact = false, attempts = 0,
     last_error = NULL, added_at = NULL, messaged_at = NULL, first_reply_at = NULL, pitched_at = NULL,
-    last_reply_at = NULL, last_reply_text = NULL, updated_at = now()
+    last_reply_at = NULL, last_reply_text = NULL, pending_reply = NULL, updated_at = now()
 RETURNING code
 """
 
@@ -138,7 +138,9 @@ ORDER BY (status = 'ADDED') DESC, age_days ASC NULLS LAST, id
 LIMIT 1
 """
 
-_UPDATABLE = {"status", "searched_at", "added_at", "messaged_at", "line_name", "opener_variant", "device_id", "last_error", "attempts"}
+_UPDATABLE = {"status", "searched_at", "added_at", "messaged_at", "line_name", "opener_variant", "device_id",
+              "last_error", "attempts", "shop_state", "reply_group", "needs_human", "do_not_contact", "first_reply_at",
+              "last_reply_at", "last_reply_text", "pitched_at", "line_chat_id", "pending_reply"}
 
 
 def next_in_queue(conn: psycopg.Connection, only_phones: Optional[Collection[str]]) -> Optional[QueueItem]:
@@ -196,3 +198,58 @@ def pause_device(conn: psycopg.Connection, device_id: str, until: datetime, stat
 
 def queue_summary(conn: psycopg.Connection) -> Dict[str, int]:
     return dict(conn.execute("SELECT status, count(*) FROM line_bot.outreach GROUP BY status").fetchall())
+
+
+# ---- replies ----
+
+@dataclass(frozen=True)
+class Contacted:
+    id: int
+    code: str
+    shop_name: str
+    status: str
+    first_reply_at: Optional[datetime]
+    last_reply_text: Optional[str]
+    do_not_contact: bool
+
+
+_CONTACTED_COLUMNS = "id, code, shop_name, status, first_reply_at, last_reply_text, do_not_contact"
+
+
+def contacted_shop(conn: psycopg.Connection, outreach_id: int) -> Optional[Contacted]:
+    """A shop the bot has already messaged (replies from shops never messaged are ignored)."""
+    row = conn.execute(f"SELECT {_CONTACTED_COLUMNS} FROM line_bot.outreach"
+                       " WHERE id = %s AND messaged_at IS NOT NULL", (outreach_id,)).fetchone()
+    return Contacted(*row) if row else None
+
+
+def record_incoming(conn: psycopg.Connection, outreach_id: int, text: str, source: str,
+                    line_message_id: Optional[str]) -> bool:
+    """Store a shop's message; False if this LINE message was stored before."""
+    return conn.execute(
+        "INSERT INTO line_bot.messages (outreach_id, direction, sender, text, source, line_message_id)"
+        " VALUES (%s, 'in', 'shop', %s, %s, %s) ON CONFLICT (line_message_id) DO NOTHING",
+        (outreach_id, text, source, line_message_id)).rowcount == 1
+
+
+def pending_replies(conn: psycopg.Connection, only_phones: Optional[Collection[str]]) -> List[Tuple[Contacted, str]]:
+    """Shops the bot still has to answer, with the message id to send (e.g. "B1")."""
+    rows = conn.execute(
+        f"SELECT {_CONTACTED_COLUMNS}, pending_reply FROM line_bot.outreach WHERE pending_reply IS NOT NULL"
+        " AND (%(only)s::text[] IS NULL OR phone = ANY(%(only)s::text[])) ORDER BY last_reply_at, id",
+        {"only": sorted(only_phones) if only_phones is not None else None}).fetchall()
+    return [(Contacted(*row[:-1]), row[-1]) for row in rows]
+
+
+def waiting_for_staff(conn: psycopg.Connection) -> List[tuple]:
+    """(code, shop name, status, last reply, last reply time) for shops whose replies need a person."""
+    return conn.execute(
+        "SELECT code, shop_name, status, last_reply_text, last_reply_at FROM line_bot.outreach"
+        " WHERE needs_human ORDER BY last_reply_at DESC NULLS LAST").fetchall()
+
+
+def mark_no_reply(conn: psycopg.Connection, messaged_before: datetime) -> int:
+    """Shops that never answered the opener by `messaged_before` become NO_REPLY (the bot does not follow up)."""
+    return conn.execute("UPDATE line_bot.outreach SET status = 'NO_REPLY', updated_at = now()"
+                        " WHERE status = 'MESSAGED' AND first_reply_at IS NULL AND messaged_at < %s",
+                        (messaged_before,)).rowcount

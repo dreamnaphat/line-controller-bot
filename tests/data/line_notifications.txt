@@ -1,0 +1,64 @@
+Current Notification Manager state:
+  Notification List:
+    NotificationRecord(0x036067bd: pkg=jp.naver.line.android user=UserHandle{0} id=16880000 tag=null importance=4 key=0|jp.naver.line.android|16880000|null|10260: Notification(channel=*** flags=SHOW_LIGHTS|AUTO_CANCEL|GROUP_SUMMARY color=0xff20c601 category=msg groupKey=NOTIFICATION_GROUP_MESSAGE vis=PRIVATE))
+      uid=10260 userId=0
+      flags=SHOW_LIGHTS|AUTO_CANCEL|GROUP_SUMMARY
+      notification=
+            when=1792754522849/1792754522849
+            tickerText=C0 ร้านทดสอบ: ดรีมกินข้าวยัง
+            extras={
+                android.title=String (C0 ร้านทดสอบ)
+                android.text=String (ดรีมกินข้าวยัง)
+                line.chat.id=String (u0000000000000000000000000000aaaa)
+                line.message.id=String (637404326209519999)
+            }
+    NotificationRecord(0x0422adff: pkg=jp.naver.line.android user=UserHandle{0} id=-1536200366 tag=NOTIFICATION_TAG_MESSAGE importance=4 key=0|jp.naver.line.android|-1536200366|NOTIFICATION_TAG_MESSAGE|10260: Notification(channel=*** flags=SHOW_LIGHTS|AUTO_CANCEL color=0xff20c601 category=msg groupKey=NOTIFICATION_GROUP_MESSAGE actions=2 vis=PRIVATE))
+      uid=10260 userId=0
+      flags=SHOW_LIGHTS|AUTO_CANCEL
+      notification=
+            when=1792754522849/1792754522849
+            extras={
+                android.title=String (C0 ร้านทดสอบ)
+                line.sticker.id=Long (13)
+                android.template=String (android.app.Notification$MessagingStyle)
+                android.text=String (ดรีมกินข้าวยัง)
+                line.chat.id=String (u0000000000000000000000000000aaaa)
+                android.messages=Bundle[] (1)
+                  [0] Bundle[{extras=Bundle[{MESSAGE_ID=637404326209519999}], sender=C0 ร้านทดสอบ, text=ดรีมกินข้าวยัง, time=1792754522849}]
+                line.message.id=String (637404326209519999)
+            }
+    NotificationRecord(0x0da54c80: pkg=jp.naver.line.android user=UserHandle{0} id=-1536200367 tag=NOTIFICATION_TAG_MESSAGE importance=4 key=0|jp.naver.line.android|-1536200367|NOTIFICATION_TAG_MESSAGE|10260: Notification(channel=*** flags=SHOW_LIGHTS|AUTO_CANCEL category=msg vis=PRIVATE))
+      notification=
+            when=1792753888331/1792753888331
+            extras={
+                android.title=String (C0 ร้านทดสอบ)
+                android.text=String (C0 ร้านทดสอบ ส่งสติกเกอร์)
+                line.chat.id=String (u0000000000000000000000000000aaaa)
+                line.message.id=String (637404326209519804)
+            }
+    NotificationRecord(0x0dbb0000: pkg=jp.naver.line.android user=UserHandle{0} id=-1536200368 tag=NOTIFICATION_TAG_MESSAGE importance=4 key=0|jp.naver.line.android|x|NOTIFICATION_TAG_MESSAGE|10260: Notification(channel=*** category=msg vis=PRIVATE))
+      notification=
+            when=1792753900000/1792753900000
+            extras={
+                android.title=String (Apisit Love U)
+                android.text=String (ข้อความส่วนตัว)
+                line.chat.id=String (u0000000000000000000000000000bbbb)
+                line.message.id=String (637404326209510000)
+            }
+    NotificationRecord(0x0dcc0000: pkg=jp.naver.line.android user=UserHandle{0} id=-1536200369 tag=NOTIFICATION_TAG_MESSAGE importance=4 key=0|jp.naver.line.android|y|NOTIFICATION_TAG_MESSAGE|10260: Notification(channel=*** category=msg vis=PRIVATE))
+      notification=
+            when=1792753999999/1792753999999
+            extras={
+                android.title=String (C12 ร้านป้าแดง)
+                android.text=String (เปิดค่ะ
+มีอะไรคะ)
+                line.chat.id=String (u0000000000000000000000000000cccc)
+                line.message.id=String (637404326209520001)
+            }
+    NotificationRecord(0x0ddd0000: pkg=android user=UserHandle{0} id=1 tag=null importance=2 key=0|android|1|null|1000: Notification(channel=*** vis=PRIVATE))
+      notification=
+            extras={
+                android.title=String (เชื่อมต่อการแก้ไขข้อบกพร่องผ่าน Wi-Fi แล้ว)
+                android.text=String (แตะเพื่อปิดการแก้ไขข้อบกพร่องผ่าน Wi-Fi)
+            }
+  mMaxPackageEnqueueRate=5.0

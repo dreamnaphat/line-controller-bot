@@ -15,6 +15,7 @@ outreach:
   reply_hours: ["08:00", "20:00"]       # ช่วงเวลาที่บอทตอบกลับ
   delay_between_shops_sec: [60, 180]    # เว้นระยะแบบสุ่มระหว่างร้าน
   auto_pitch: false             # ตอบอัตโนมัติ 1 ครั้งหลังร้านตอบ — เปิดหลังแก้ข้อเสนอใน messages.yaml ให้ตรงของจริง
+  chat_scan_minutes: 20         # ไล่ดูหน้ารายการแชททุกกี่นาที (เก็บคำตอบที่การแจ้งเตือนพลาด)
   no_reply_days: 7              # ร้านไม่ตอบกี่วันถือว่าจบ
   max_consecutive_not_found: 5  # ค้นไม่เจอติดกันกี่ครั้งให้พักเครื่อง
   not_found_pause_minutes: 60

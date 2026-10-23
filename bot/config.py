@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional, Set, Tuple
 
 import yaml
 
@@ -45,3 +45,10 @@ def test_phones() -> Set[str]:
     _load_env()
     raw = os.environ.get("TEST_PHONES", "")
     return {p for p in (normalize_phone(part).phone for part in raw.split(",")) if p}
+
+
+def telegram() -> Tuple[Optional[str], Optional[str]]:
+    """(bot token, chat id) from TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID in .env, or Nones."""
+    _load_env()
+    return (os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() or None,
+            os.environ.get("TELEGRAM_CHAT_ID", "").strip() or None)

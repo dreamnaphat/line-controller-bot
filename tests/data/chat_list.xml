@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <node text="" resource-id="jp.naver.line.android:id/viewpager" class="androidx.viewpager.widget.ViewPager" clickable="false" bounds="[0,0][1264,2486]">
+    <node text="แชท" resource-id="" class="android.widget.TextView" clickable="false" bounds="[105,193][219,270]" />
+    <node text="" resource-id="" class="android.view.View" clickable="true" bounds="[0,851][1264,1089]" />
+    <node text="2 คำขอแชทที่ยังไม่ได้อ่าน" resource-id="" class="android.widget.TextView" clickable="false" bounds="[273,895][926,977]" />
+    <node text="Orlantha, UFM@#₩1N26(21)" resource-id="" class="android.widget.TextView" clickable="false" bounds="[273,984][965,1046]" />
+    <node text="20/6" resource-id="" class="android.widget.TextView" clickable="false" bounds="[1115,893][1208,945]" />
+    <node text="" resource-id="unread_count" class="android.view.View" clickable="false" bounds="[1041,963][1190,1047]" />
+    <node text="308" resource-id="" class="android.widget.TextView" clickable="false" bounds="[1052,974][1145,1036]" />
+    <node text="" resource-id="" class="android.view.View" clickable="true" bounds="[0,1089][1264,1327]" />
+    <node text="" resource-id="" class="android.view.View" clickable="true" bounds="[56,1124][273,1292]" />
+    <node text="C0 ร้านทดสอบ" resource-id="" class="android.widget.TextView" clickable="false" bounds="[273,1128][655,1210]" />
+    <node text="ดรีมก้ินข้าวยัง" resource-id="" class="android.widget.TextView" clickable="false" bounds="[273,1217][570,1288]" />
+    <node text="18:22" resource-id="" class="android.widget.TextView" clickable="false" bounds="[1094,1131][1208,1183]" />
+    <node text="" resource-id="unread_count" class="android.view.View" clickable="false" bounds="[1137,1201][1190,1285]" />
+    <node text="1" resource-id="" class="android.widget.TextView" clickable="false" bounds="[1148,1212][1179,1274]" />
+    <node text="" resource-id="" class="android.view.View" clickable="true" bounds="[0,1327][1264,1565]" />
+    <node text="ttb bank" resource-id="" class="android.widget.TextView" clickable="false" bounds="[273,1341][512,1412]" />
+    <node text="มุกใหม่มิจฉาชีพ" resource-id="" class="android.widget.TextView" clickable="false" bounds="[273,1419][1038,1551]" />
+    <node text="" resource-id="unread_count" class="android.view.View" clickable="false" bounds="[1137,1439][1190,1523]" />
+    <node text="5" resource-id="" class="android.widget.TextView" clickable="false" bounds="[1148,1450][1179,1512]" />
+    <node text="" resource-id="" class="android.view.View" clickable="true" bounds="[0,1565][1264,1803]" />
+    <node text="C12 ร้านป้าแดง" resource-id="" class="android.widget.TextView" clickable="false" bounds="[273,1579][895,1650]" />
+    <node text="สวัสดีครับ ร้านป้าแดง เปิดขายอยู่ไหมครับ 🙏" resource-id="" class="android.widget.TextView" clickable="false" bounds="[273,1657][969,1789]" />
+    <node text="เมื่อวาน" resource-id="" class="android.widget.TextView" clickable="false" bounds="[1094,1607][1208,1659]" />
+  </node>
+</hierarchy>

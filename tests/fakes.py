@@ -1,5 +1,7 @@
 """A scripted stand-in for a uiautomator2 device, plus a small LINE app built from config/selectors.yaml."""
 
+from types import SimpleNamespace
+
 from bot.config import load_yaml
 
 PACKAGE = "jp.naver.line.android"
@@ -42,6 +44,14 @@ class FakeDevice:
         self.foreground = foreground
         self.clears = clears or {}
         self.log, self.text = [], {}
+        self.shell_output = ""                    # what `dumpsys notification` returns
+        self.hierarchy = "<hierarchy></hierarchy>"  # what dump_hierarchy returns
+
+    def shell(self, command):
+        return SimpleNamespace(output=self.shell_output, exit_code=0)
+
+    def dump_hierarchy(self):
+        return self.hierarchy
 
     def go(self, action):
         self.screen = self.moves.get((self.screen, action), self.screen)
@@ -83,7 +93,7 @@ def line_world(result):
     """A fake LINE app using the real selectors. `result` is the search outcome screen:
     "found", "friend", "missing" or "limited". Returns (device, selectors)."""
     sel = {k: v[0] for k, v in load_yaml("selectors.yaml").items()}
-    tab_bar = [sel["home_tab"]]
+    tab_bar = [sel["home_tab"], sel["chat_tab"]]
     screens = {
         "home": tab_bar + [sel["add_friend_button"]],
         "add": [sel["add_friend_page"], sel["search_entry"]],
@@ -95,6 +105,7 @@ def line_world(result):
         "chat": [sel["chat_input"], sel["chat_send_button"], sel["chat_header_name"]],
         "profile": [sel["friend_name_edit"], sel["profile_close"]],
         "edit": [sel["name_edit_input"], sel["name_edit_save"]],
+        "chats": tab_bar + [sel["chat_tab_selected"]],
     }
     moves = {
         ("home", key(sel["add_friend_button"])): "add",
@@ -106,6 +117,7 @@ def line_world(result):
         ("profile", key(sel["friend_name_edit"])): "edit",
         ("edit", key(sel["name_edit_save"])): "profile",
         ("profile", key(sel["profile_close"])): "chat",
+        ("home", key(sel["chat_tab"])): "chats",
     }
     for screen in screens:  # back always ends up on Home
         moves.setdefault((screen, ("press", "back")), "home")
@@ -113,3 +125,10 @@ def line_world(result):
                         clears={key(sel["chat_send_button"]): [key(sel["chat_input"])]})
     device.text[key(sel["result_name"])] = "Nong.  Nong"
     return device, load_yaml("selectors.yaml")
+
+
+def show_chat_in_list(device, code):
+    """Make the chat named "<code> ..." visible in the Chats tab; tapping it opens the chat."""
+    spec = {"textStartsWith": f"{code} "}
+    device.screens["chats"].append(spec)
+    device.moves[("chats", key(spec))] = "chat"

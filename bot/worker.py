@@ -57,13 +57,15 @@ class Worker:
                  on_error: Callable[[db.QueueItem], None] = lambda item: None,
                  now: Callable[[], datetime] = lambda: datetime.now().astimezone(),
                  sleep: Callable[[float], None] = time.sleep,
-                 delay: Callable[[float, float], float] = random.uniform):
+                 delay: Callable[[float, float], float] = random.uniform,
+                 replies: Optional[Any] = None):
         """`conn` must be in autocommit mode so every step is saved the moment it happens.
         `allowed_phones` is the TEST_PHONES set while test mode is on, otherwise None."""
         self.conn, self.app, self.cfg = conn, app, config
         self.messages, self.business, self.settings = messages, business, settings
         self.device_id, self.allowed = device_id, allowed_phones
         self.log, self.on_error, self.now, self.sleep, self.delay = log, on_error, now, sleep, delay
+        self.replies = replies  # a ReplyWatcher: checked between shops and while waiting
 
     # ---- one shop ----
 
@@ -119,13 +121,18 @@ class Worker:
 
     # ---- the loop ----
 
+    def _check_replies(self) -> None:
+        if self.replies is not None:
+            self.replies.tick()
+
     def _wait_until(self, moment: datetime, why: str) -> None:
-        self.log(f"{why} — รอถึง {moment:%d/%m %H:%M}")
+        self.log(f"{why} — รอถึง {moment:%d/%m %H:%M}" + (" (ระหว่างนี้คอยดูคำตอบของร้าน)" if self.replies else ""))
         while True:
             remaining = (moment - self.now()).total_seconds()
             if remaining <= 0:
                 return
-            self.sleep(min(remaining, 60))
+            self.sleep(min(remaining, 30))
+            self._check_replies()
 
     def run(self, once: bool = False, ignore_hours: bool = False, max_shops: Optional[int] = None) -> str:
         """Contact shops until the queue is empty, LINE limits searching, or `max_shops` is reached.
@@ -135,7 +142,9 @@ class Worker:
         """
         db.touch_device(self.conn, self.device_id)
         done = not_found_streak = failure_streak = 0
+        idle_logged = False
         while True:
+            self._check_replies()
             now = self.now()
             paused_until = db.device_paused_until(self.conn, self.device_id)
             if paused_until is not None and paused_until > now:
@@ -158,10 +167,20 @@ class Worker:
 
             item = db.next_in_queue(self.conn, self.allowed)
             if item is None:
-                return "ไม่มีร้านเหลือในคิว" + (" (โหมดทดสอบ: ดูเฉพาะเบอร์ใน TEST_PHONES)" if self.allowed is not None else "")
+                empty = "ไม่มีร้านเหลือในคิว" + (" (โหมดทดสอบ: ดูเฉพาะเบอร์ใน TEST_PHONES)" if self.allowed is not None else "")
+                if self.replies is None or once:
+                    return empty
+                if not idle_logged:
+                    self.log(f"{empty} — คอยดูคำตอบของร้านต่อ (กด Ctrl+C เพื่อหยุด)")
+                    idle_logged = True
+                self.sleep(30)
+                continue
+            idle_logged = False
 
             outcome = self.process(item)
             done += 1
+            if self.replies is not None:
+                self.app.leave()  # LINE in the background so replies show up as notifications
             if outcome == Outcome.LIMITED:
                 until = next_window_start(start_of_day(now) + timedelta(days=1), self.cfg.window)
                 db.pause_device(self.conn, self.device_id, until)

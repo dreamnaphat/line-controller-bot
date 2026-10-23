@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from .config import database_url, device_serial, load_settings, load_yaml, test_phones
+from .config import database_url, device_serial, load_settings, load_yaml, telegram, test_phones
 from .importer import plan_import, rows_to_store, summarize
 from .phone import normalize_phone
 from .safety import blocked_reason, test_mode
@@ -223,6 +223,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"ข้อความ {config.opener_id}: {exc} (ใส่ค่าใน config/settings.yaml หัวข้อ business)")
         return 1
 
+    auto_reply = bool(settings["outreach"].get("auto_pitch"))
+    if auto_reply:
+        problem = _reply_messages_problem(messages, business)
+        if problem:
+            print(f"เปิด auto_pitch ไว้ แต่{problem} (ใส่ค่าใน config/settings.yaml หัวข้อ business หรือปิด auto_pitch)")
+            return 1
+
     log = _worker_log()
     d = connect(device_serial())
     device_id = device_serial() or d.serial
@@ -231,10 +238,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         if not db.schema_exists(conn):
             print("ยังไม่มีตารางของบอท — รัน python -m bot init-db ก่อน")
             return 1
+        watcher = _reply_watcher(conn, app, d, settings, messages, allowed, log)
         worker = Worker(conn, app, config, messages, business, device_id, settings, allowed, log=log,
-                        on_error=lambda item: dump_screen(d, f"worker-{item.code}", LOG_DIR))
+                        on_error=lambda item: dump_screen(d, f"worker-{item.code}", LOG_DIR), replies=watcher)
         log(f"เริ่มทำงาน: มือถือ {device_id}, โควตา {config.daily_quota} ร้าน/วัน"
-            + (f", โหมดทดสอบ ({len(allowed)} เบอร์)" if allowed is not None else ", ทักร้านจริง"))
+            + (f", โหมดทดสอบ ({len(allowed)} เบอร์)" if allowed is not None else ", ทักร้านจริง")
+            + (", ตอบกลับอัตโนมัติ" if auto_reply else ", ไม่ตอบอัตโนมัติ (แจ้งพนักงานอย่างเดียว)"))
         try:
             reason = worker.run(once=args.once, ignore_hours=args.now, max_shops=args.max)
         except device_errors() as exc:
@@ -258,6 +267,75 @@ def cmd_status(args: argparse.Namespace) -> int:
         return 0
     for status, count in sorted(summary.items(), key=lambda item: -item[1]):
         print(f"  {labels.get(status, status)} ({status}): {count}")
+    return 0
+
+
+def _reply_messages_problem(messages, business):
+    for reply_id in ("B1", "B2", "B3", "B4", "B5", "B6"):
+        try:
+            render(messages[reply_id], shop="ร้านทดสอบ", factory=business.get("factory_name"),
+                   persona=business.get("persona_name"), source=business.get("source_text"))
+        except TemplateError as exc:
+            return f"ข้อความ {reply_id}: {exc}"
+    return None
+
+
+def _reply_watcher(conn, app, device, settings, messages, allowed, log):
+    from datetime import datetime
+
+    from .classifier import ReplyClassifier
+    from .alerts import make_alert
+    from .replies import ReplyHandler, ReplyWatcher
+    from .schedule import parse_window
+
+    outreach = settings["outreach"]
+    now = lambda: datetime.now().astimezone()  # noqa: E731
+    handler = ReplyHandler(conn, ReplyClassifier.from_config(), bool(outreach.get("auto_pitch")),
+                           make_alert(log, *telegram()), log, now)
+    return ReplyWatcher(handler, app, device, messages, settings.get("business", {}), allowed,
+                        parse_window(outreach["reply_hours"]), float(outreach.get("chat_scan_minutes", 20)), log, now,
+                        int(outreach.get("no_reply_days", 7)))
+
+
+def cmd_check_replies(args: argparse.Namespace) -> int:
+    """One round of reply checking right now, ignoring reply hours: notifications, chat list, pending replies."""
+    from . import db
+    from .device import connect, device_errors
+    from .line_app import LineApp
+
+    settings = load_settings()
+    allowed = test_phones() if test_mode(settings) else None
+    log = _worker_log()
+    d = connect(device_serial())
+    app = LineApp(d, load_yaml("selectors.yaml"), settings["device"]["line_package"])
+    with db.connect(database_url(), autocommit=True) as conn:
+        watcher = _reply_watcher(conn, app, d, settings, load_messages(), allowed, log)
+        try:
+            found = watcher.poll_notifications()
+            log(f"จากการแจ้งเตือน: คำตอบใหม่ {found} ข้อความ")
+            found = watcher.scan_chat_list()
+            log(f"จากหน้ารายการแชท: คำตอบใหม่ {found} ข้อความ")
+            if watcher.handler.auto_reply:
+                log(f"บอทตอบกลับไป {watcher.send_pending()} ร้าน")
+            app.leave()
+        except device_errors() as exc:
+            log(f"หยุด: มือถือมีปัญหา ({exc})")
+            return 1
+    return 0
+
+
+def cmd_replies(args: argparse.Namespace) -> int:
+    """Shops whose replies are waiting for a person."""
+    from . import db
+
+    with db.connect(database_url()) as conn:
+        rows = db.waiting_for_staff(conn)
+    if not rows:
+        print("ไม่มีร้านที่รอพนักงานตอบ")
+        return 0
+    for code, name, status, text, at in rows:
+        when = f"{at.astimezone():%d/%m %H:%M}" if at else "-"
+        print(f"  {code:<6} {name}  [{status}]  {when}  \"{text or ''}\"")
     return 0
 
 
@@ -291,6 +369,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_run)
 
     sub.add_parser("status", help="ดูจำนวนร้านในคิวแยกตามสถานะ").set_defaults(func=cmd_status)
+    sub.add_parser("replies", help="ดูร้านที่ตอบแล้วและรอพนักงานคุยต่อ").set_defaults(func=cmd_replies)
+    sub.add_parser("check-replies", help="ตรวจคำตอบของร้านตอนนี้เลย 1 รอบ").set_defaults(func=cmd_check_replies)
 
     p = sub.add_parser("poc", help="ทดลองกับเบอร์ทดสอบ 1 เบอร์: ค้นหา → เพิ่มเพื่อน → พิมพ์ข้อความแรก")
     p.add_argument("--phone", required=True, help="เบอร์ทดสอบ (ใช้เบอร์ของทีมเท่านั้น)")

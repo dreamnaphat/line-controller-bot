@@ -137,6 +137,26 @@ class LineApp:
         self.tap("result_chat_button")
         self._require("chat_input", 10.0)
 
+    def open_chat_tab(self) -> None:
+        self.tap("chat_tab")
+        self._require("chat_tab_selected", 10.0)
+
+    def open_chat_with(self, code: str) -> None:
+        """Open the chat we renamed to "<code> ..." from the Chats tab (no phone search, so no search quota)."""
+        self.go_home()
+        self.open_chat_tab()
+        self.before_action(f"เปิดแชท {code}")
+        for name in (self.d(textStartsWith=f"{code} "), self.d(text=code)):
+            if name.exists:
+                name.click()
+                self._require("chat_input", 10.0)
+                return
+        raise LineUIError(f"ไม่เจอแชท {code} ในหน้ารายการแชท")
+
+    def leave(self) -> None:
+        """Go to the phone's home screen so LINE posts new messages as notifications."""
+        self.d.press("home")
+
     def already_sent(self, text: str) -> bool:
         """True if `text` already shows in the open chat (a previous run sent it but stopped before saving).
 

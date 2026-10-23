@@ -68,3 +68,11 @@ chat_send_button:           # ปุ่มส่ง
 
 result_name:                # ชื่อโปรไฟล์ LINE ในผลค้นหา (บันทึกไว้ในคิว)
   - resourceId: jp.naver.line.android:id/addfriend_name
+
+chat_tab:                   # แท็บ "แชท" ด้านล่าง
+  - resourceId: jp.naver.line.android:id/bnb_button_clickable_area
+    descriptionStartsWith: แท็บแชท
+
+chat_tab_selected:          # ใช้ยืนยันว่าอยู่ในหน้ารายการแชทแล้ว
+  - resourceId: jp.naver.line.android:id/bnb_button_clickable_area
+    descriptionStartsWith: แท็บแชท เลือกแล้ว
